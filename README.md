@@ -1,4 +1,4 @@
-PROTOTIPO-5 - Plataforma de simulacion psicometrica
+PROTOTIPO-5 - COMPASS
 ====================================================
 
 Resumen
