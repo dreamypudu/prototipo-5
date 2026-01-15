@@ -2,6 +2,12 @@
 export type TimeSlotType = 'mañana' | 'tarde' | 'noche';
 export type SimulatorVersion = 'CESFAM' | 'SERCOTEC' | 'MUNICIPAL' | 'INNOVATEC';
 export type GameStatus = 'playing' | 'lost' | 'won';
+export type GlobalAttributeId = 'budget' | 'reputation';
+export type EffectMagnitude = 'S' | 'M' | 'L';
+export type EffectDirection = '+' | '-';
+export type GlobalEffectsUI = Partial<Record<GlobalAttributeId, EffectMagnitude>>;
+export type GlobalEffectsReal = Partial<Record<GlobalAttributeId, { magnitude: EffectMagnitude; direction: EffectDirection }>>;
+export type ConversationMode = 'idle' | 'pre_sequence' | 'in_sequence' | 'post_sequence' | 'questions' | 'questions_only';
 
 // --- PSYCHOMETRIC & ML LOGGING TYPES ---
 
@@ -73,6 +79,21 @@ export interface InformationTier {
   information: string;
 }
 
+export interface QuestionRequirement {
+  trust_min?: number;
+  support_min?: number;
+  reputation_min?: number;
+}
+
+export interface StakeholderQuestion {
+  question_id: string;
+  text: string;
+  answer: string;
+  requirements?: QuestionRequirement;
+  tags?: string[];
+  time_cost?: number;
+}
+
 export interface Stakeholder {
   id: string;
   shortId: string;
@@ -90,6 +111,8 @@ export interface Stakeholder {
   agenda: string[];
   commitments: Commitment[];
   informationTiers: InformationTier[];
+  questions: StakeholderQuestion[];
+  questionsAsked: string[];
   status: 'ok' | 'critical';
   lastMetDay: number;
 }
@@ -108,6 +131,8 @@ export interface Consequences {
     projectProgressChange?: number;
     dialogueResponse: string;
     expected_actions?: Partial<ExpectedAction>[]; // NEW: Actions that "should" happen after this choice
+    global_effects_ui?: GlobalEffectsUI;
+    global_effects_real?: GlobalEffectsReal;
 }
 
 export interface DecisionLogEntry {
@@ -118,6 +143,22 @@ export interface DecisionLogEntry {
     choiceId: string;
     choiceText: string;
     consequences: Consequences;
+    globalEffectsShown?: GlobalEffectsUI;
+    globalEffectsApplied?: GlobalEffectsReal;
+    globalEffectsBefore?: { budget: number; reputation: number };
+    globalEffectsAfter?: { budget: number; reputation: number };
+}
+
+export interface QuestionLogEntry {
+    day: number;
+    timeSlot: TimeSlotType;
+    stakeholder_id: string;
+    question_id: string;
+    was_locked: boolean;
+    trust_at_ask: number;
+    support_at_ask: number;
+    reputation_at_ask: number;
+    timestamp: number;
 }
 
 export interface ProcessLogEntry {
@@ -226,6 +267,7 @@ export interface GameState {
   completedSequences: string[];
   criticalWarnings: string[];
   decisionLog: DecisionLogEntry[];
+  questionLog: QuestionLogEntry[];
   processLog: ProcessLogEntry[];
   inbox: InboxEmail[];
   stakeholder_preferences: { [stakeholderId: string]: string };
@@ -256,6 +298,9 @@ export interface PlayerAction {
   riskLevel?: string;
   relationshipImpact?: string;
   informationDepth?: string;
+  globalEffectsUI?: GlobalEffectsUI;
+  uiVariant?: 'default' | 'success' | 'danger' | 'muted';
+  isLocked?: boolean;
 }
 
 export interface ScenarioOption {

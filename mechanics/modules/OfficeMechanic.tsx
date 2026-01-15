@@ -21,7 +21,8 @@ const OfficeMechanic: React.FC = () => {
     gameStatus,
     currentMeeting,
     onPlayerAction,
-    onNavigateTab
+    onNavigateTab,
+    onActionHover
   } = office;
 
   let sceneParticipants: Stakeholder[] | undefined;
@@ -89,6 +90,7 @@ const OfficeMechanic: React.FC = () => {
                 actions={playerActions}
                 onAction={onPlayerAction}
                 disabled={isLoading || gameStatus !== 'playing'}
+                onHoverEffects={onActionHover}
               />
             </div>
           )}

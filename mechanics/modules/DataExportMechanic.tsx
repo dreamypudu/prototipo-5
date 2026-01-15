@@ -12,6 +12,7 @@ const DataExportMechanic: React.FC = () => {
       mechanicEvents={gameState.mechanicEvents}
       canonicalActions={gameState.canonicalActions}
       expectedActions={gameState.expectedActions}
+      questionLog={gameState.questionLog}
       sessionExport={sessionExport}
     />
   );

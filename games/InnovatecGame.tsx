@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { GameState, Stakeholder, PlayerAction, TimeSlotType, MeetingSequence, ScenarioNode, DecisionLogEntry, InboxEmail, MechanicConfig, SimulatorConfig, GameStatus } from '../types';
+import { ConversationMode, GameState, GlobalEffectsUI, Stakeholder, StakeholderQuestion, PlayerAction, TimeSlotType, MeetingSequence, ScenarioNode, DecisionLogEntry, InboxEmail, MechanicConfig, SimulatorConfig, GameStatus, QuestionLogEntry } from '../types';
 import { INITIAL_GAME_STATE, TIME_SLOTS, DIRECTOR_OBJECTIVES, SECRETARY_ROLE } from '../data/innovatec/constants';
 import { scenarios as scenarioData } from '../data/innovatec/scenarios';
 import { EMAIL_TEMPLATES } from '../data/innovatec/emails';
@@ -7,6 +7,7 @@ import { startLogging, finalizeLogging } from '../services/Timelogger';
 import { mechanicEngine } from '../services/MechanicEngine';
 import { compareExpectedVsActual } from '../services/ComparisonEngine';
 import { buildSessionExport } from '../services/sessionExport';
+import { clampReputation, resolveGlobalEffects } from '../services/globalEffects';
 import { INNOVATEC_REGISTRY } from '../mechanics/innovatecRegistry';
 import { MechanicProvider } from '../mechanics/MechanicContext';
 import { MechanicDispatchAction, OfficeState } from '../mechanics/types';
@@ -81,6 +82,10 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
   const [currentMeeting, setCurrentMeeting] = useState<{ sequence: MeetingSequence; nodeIndex: number } | null>(null);
   const [warningPopupMessage, setWarningPopupMessage] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [hoveredGlobalEffects, setHoveredGlobalEffects] = useState<GlobalEffectsUI | null>(null);
+  const [conversationMode, setConversationMode] = useState<ConversationMode>('idle');
+  const [questionsOrigin, setQuestionsOrigin] = useState<ConversationMode | null>(null);
+  const [questionsBaseDialogue, setQuestionsBaseDialogue] = useState<string>('');
   const enabledMechanics = resolveMechanics(config);
   const syncLogs = useMechanicLogSync(setGameState);
   const stageTabs = [
@@ -105,6 +110,96 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
   const setPersonalizedDialogue = useCallback((dialogue: string) => {
     setCurrentDialogue(dialogue.replace(/{playerName}/g, gameState.playerName));
   }, [gameState.playerName]);
+
+  const handleActionHover = useCallback((effects: GlobalEffectsUI | null) => {
+    setHoveredGlobalEffects(effects);
+  }, []);
+
+  const hasQuestionsFor = (stakeholder: Stakeholder | null): boolean => {
+    if (!stakeholder) return false;
+    return Array.isArray(stakeholder.questions) && stakeholder.questions.length > 0;
+  };
+
+  const buildPreSequenceActions = (stakeholder: Stakeholder, allowQuestions: boolean): PlayerAction[] => {
+    const actions: PlayerAction[] = [];
+    if (allowQuestions && hasQuestionsFor(stakeholder)) {
+      actions.push({ label: 'Hacer preguntas', cost: 'Opcional', action: 'ask_questions', uiVariant: 'success' });
+    }
+    actions.push({ label: 'Comenzar Discusion', cost: 'Iniciar', action: 'start_meeting_sequence' });
+    return actions;
+  };
+
+  const buildPostSequenceActions = (stakeholder: Stakeholder): PlayerAction[] => {
+    const actions: PlayerAction[] = [];
+    if (hasQuestionsFor(stakeholder)) {
+      actions.push({ label: 'Hacer preguntas', cost: 'Opcional', action: 'ask_questions', uiVariant: 'success' });
+    }
+    actions.push({ label: 'Concluir Reunion', cost: 'Finalizar', action: 'conclude_meeting' });
+    return actions;
+  };
+
+  const getQuestionRequirementText = (question: StakeholderQuestion): string => {
+    const parts: string[] = [];
+    if (typeof question.requirements?.trust_min === 'number') parts.push(`Confianza >= ${question.requirements.trust_min}`);
+    if (typeof question.requirements?.support_min === 'number') parts.push(`Apoyo >= ${question.requirements.support_min}`);
+    if (typeof question.requirements?.reputation_min === 'number') parts.push(`Reputacion >= ${question.requirements.reputation_min}`);
+    return parts.join(' | ');
+  };
+
+  const canAskQuestion = (question: StakeholderQuestion, stakeholder: Stakeholder, reputation: number): boolean => {
+    const req = question.requirements;
+    if (!req) return true;
+    if (typeof req.trust_min === 'number' && stakeholder.trust < req.trust_min) return false;
+    if (typeof req.support_min === 'number' && stakeholder.support < req.support_min) return false;
+    if (typeof req.reputation_min === 'number' && reputation < req.reputation_min) return false;
+    return true;
+  };
+
+  const hasCompletedSequenceForRole = (role: string, completedSequences: string[]) => {
+    return scenarioData.sequences.some(
+      seq => seq.stakeholderRole === role && completedSequences.includes(seq.sequence_id)
+    );
+  };
+
+  const buildQuestionListActions = (
+    stakeholder: Stakeholder,
+    reputation: number,
+    origin: ConversationMode | null
+  ): PlayerAction[] => {
+    const actions = stakeholder.questions
+      .map(question => {
+        const alreadyAsked = stakeholder.questionsAsked.includes(question.question_id);
+        const canAsk = canAskQuestion(question, stakeholder, reputation);
+        const suffix = canAsk ? '' : ' (Bloqueada)';
+        return {
+          label: `${question.text}${suffix}`,
+          cost: canAsk ? 'Pregunta' : 'Bloqueada',
+          action: `question:${question.question_id}`,
+          uiVariant: canAsk ? (alreadyAsked ? 'muted' : 'default') : 'danger',
+          isLocked: !canAsk
+        };
+      });
+
+    if (origin === 'questions_only') {
+      actions.push({ label: 'Concluir Reunion', cost: 'Finalizar', action: 'conclude_meeting' });
+    } else {
+      actions.push({ label: 'Volver', cost: 'Volver', action: 'close_questions' });
+    }
+    return actions;
+  };
+
+  const buildQuestionAnswerActions = (origin: ConversationMode | null): PlayerAction[] => {
+    const actions: PlayerAction[] = [
+      { label: 'Seguir preguntando', cost: 'Opcional', action: 'return_to_questions', uiVariant: 'success' }
+    ];
+    if (origin === 'pre_sequence') {
+      actions.push({ label: 'Comenzar Discusion', cost: 'Iniciar', action: 'start_meeting_sequence' });
+    }
+    if (origin === 'post_sequence' || origin === 'questions_only') {
+      actions.push({ label: 'Concluir Reunion', cost: 'Finalizar', action: 'conclude_meeting' });
+    }
+    return actions;
+  };
 
 
  useEffect(() => {
@@ -247,15 +342,32 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
         setPlayerActions(getInitialSecretaryActions());
         setSchedulingState('none');
         setCountdown(PERIOD_DURATION);
+        setConversationMode('idle');
+        setQuestionsOrigin(null);
+        setQuestionsBaseDialogue('');
     }
   };
   
   const presentScenario = useCallback((scenario: ScenarioNode) => {
     setPersonalizedDialogue(scenario.dialogue);
-    setPlayerActions(scenario.options.map(opt => ({ label: opt.text, action: opt.option_id, cost: "Decisión" })));
+    setPlayerActions(
+      scenario.options.map(opt => {
+        const effects = resolveGlobalEffects(opt.consequences);
+        return { label: opt.text, action: opt.option_id, cost: "Decisión", globalEffectsUI: effects.ui };
+      })
+    );
     startLogging(scenario.node_id);
     mechanicEngine.emitEvent('dialogue', 'scenario_presented', { node_id: scenario.node_id });
   }, [setPersonalizedDialogue]);
+
+  const startSequence = useCallback((sequence: MeetingSequence, stakeholder: Stakeholder) => {
+    setCharacterInFocus(stakeholder);
+    setCurrentMeeting({ sequence, nodeIndex: 0 });
+    setPersonalizedDialogue(sequence.initialDialogue);
+    setConversationMode('pre_sequence');
+    const allowQuestions = hasCompletedSequenceForRole(stakeholder.role, gameState.completedSequences);
+    setPlayerActions(buildPreSequenceActions(stakeholder, allowQuestions));
+  }, [setPersonalizedDialogue, buildPreSequenceActions, gameState.completedSequences]);
 
 
   const advanceTimeAndUpdateFocus = useCallback((justCompletedSequenceId?: string) => {
@@ -326,18 +438,21 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
                 seq.stakeholderRole === targetStakeholder.role &&
                 !newState.completedSequences.includes(seq.sequence_id)
             );
-            
             if (sequence) {
-                setCurrentMeeting({ sequence, nodeIndex: 0 });
-                setPersonalizedDialogue(sequence.initialDialogue);
-                setPlayerActions([{ label: "Comenzar Discusión", cost: "Iniciar", action: "start_meeting_sequence" }]);
+                startSequence(sequence, targetStakeholder);
             } else {
                 const scenario = scenarioData.scenarios.find(s => s.stakeholderRole === targetStakeholder.role && !newState.completedScenarios.includes(s.node_id));
                 if (scenario) {
                      presentScenario(scenario);
+                } else if (hasQuestionsFor(targetStakeholder)) {
+                     setConversationMode('questions_only');
+                     setQuestionsOrigin('questions_only');
+                     setQuestionsBaseDialogue('(No hay mas reuniones pendientes. Puedes hacer preguntas si lo deseas.)');
+                     setPersonalizedDialogue('(No hay mas reuniones pendientes. Puedes hacer preguntas si lo deseas.)');
+                     setPlayerActions(buildQuestionListActions(targetStakeholder, newState.reputation, 'questions_only'));
                 } else {
                      setPersonalizedDialogue("Hemos discutido todo lo necesario por ahora. Gracias por tu tiempo.");
-                     setPlayerActions([{ label: "Concluir Reunión", cost: "Finalizar", action: "conclude_meeting" }]);
+                     setPlayerActions([{ label: "Concluir Reunion", cost: "Finalizar", action: "conclude_meeting" }]);
                 }
             }
             setCountdown(PERIOD_DURATION);
@@ -349,7 +464,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
         }
         returnToSecretary(secretaryMessage);
     }
-  }, [gameState, characterInFocus, secretary, advanceTime, setPersonalizedDialogue, presentScenario, syncLogs]);
+  }, [gameState, characterInFocus, secretary, advanceTime, setPersonalizedDialogue, presentScenario, startSequence, hasQuestionsFor, buildQuestionListActions, syncLogs]);
   
    useEffect(() => {
     if (isTimerPaused || activeTab !== 'interaction' || gameStatus !== 'playing' || !isGameStarted) {
@@ -401,6 +516,40 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
     }
   }, [characterInFocus, schedulingState]);
 
+  const handleAskQuestion = (question: StakeholderQuestion) => {
+    if (!characterInFocus) return;
+    setGameState(prev => {
+        const updatedStakeholders = prev.stakeholders.map(sh => {
+            if (sh.id !== characterInFocus.id) return sh;
+            const alreadyAsked = sh.questionsAsked.includes(question.question_id);
+            if (alreadyAsked) return sh;
+            return {
+                ...sh,
+                questionsAsked: [...sh.questionsAsked, question.question_id]
+            };
+        });
+
+        const questionLogEntry: QuestionLogEntry = {
+            day: prev.day,
+            timeSlot: prev.timeSlot,
+            stakeholder_id: characterInFocus.id,
+            question_id: question.question_id,
+            was_locked: false,
+            trust_at_ask: characterInFocus.trust,
+            support_at_ask: characterInFocus.support,
+            reputation_at_ask: prev.reputation,
+            timestamp: Date.now()
+        };
+
+        return {
+            ...prev,
+            stakeholders: updatedStakeholders,
+            questionLog: [...prev.questionLog, questionLogEntry],
+            eventsLog: [...prev.eventsLog, `Pregunta a ${characterInFocus.name}: ${question.text}`]
+        };
+    });
+  };
+
 
   const handleRequestMeeting = (stakeholder: Stakeholder) => {
     if (!secretary || !selectedSlot) return;
@@ -424,6 +573,72 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
   const handlePlayerAction = async (action: PlayerAction) => {
     if (!characterInFocus || gameStatus !== 'playing') return;
     
+    if (action.action === 'ask_questions') {
+        const origin = conversationMode === 'pre_sequence' || conversationMode === 'post_sequence'
+          ? conversationMode
+          : 'questions_only';
+        setQuestionsOrigin(origin);
+        setQuestionsBaseDialogue(currentDialogue);
+        setConversationMode('questions');
+        setPlayerActions(buildQuestionListActions(characterInFocus, gameState.reputation, origin));
+        setIsLoading(false);
+        return;
+    }
+
+    if (action.action === 'close_questions') {
+        const origin = questionsOrigin;
+        setQuestionsOrigin(null);
+        setConversationMode(origin ?? 'idle');
+        if (questionsBaseDialogue) {
+          setPersonalizedDialogue(questionsBaseDialogue);
+        }
+        setQuestionsBaseDialogue('');
+        if (origin === 'pre_sequence') {
+            const allowQuestions = hasCompletedSequenceForRole(characterInFocus.role, gameState.completedSequences);
+            setPlayerActions(buildPreSequenceActions(characterInFocus, allowQuestions));
+        } else if (origin === 'post_sequence') {
+            setPlayerActions(buildPostSequenceActions(characterInFocus));
+        }
+        setIsLoading(false);
+        return;
+    }
+
+    if (action.action === 'return_to_questions') {
+        const origin = questionsOrigin ?? 'questions_only';
+        setConversationMode('questions');
+        if (questionsBaseDialogue) {
+          setPersonalizedDialogue(questionsBaseDialogue);
+        }
+        setPlayerActions(buildQuestionListActions(characterInFocus, gameState.reputation, origin));
+        setIsLoading(false);
+        return;
+    }
+
+    if (action.action.startsWith('question:')) {
+        const questionId = action.action.split(':')[1];
+        const question = characterInFocus.questions.find(q => q.question_id === questionId);
+        if (!question) {
+            setIsLoading(false);
+            return;
+        }
+        const alreadyAsked = characterInFocus.questionsAsked.includes(question.question_id);
+        const canAsk = canAskQuestion(question, characterInFocus, gameState.reputation);
+        if (!canAsk) {
+            const reqText = getQuestionRequirementText(question);
+            const message = reqText ? `No puedo responder eso aun. Requisitos: ${reqText}.` : 'No puedo responder eso aun.';
+            setPersonalizedDialogue(message);
+            setPlayerActions(buildQuestionListActions(characterInFocus, gameState.reputation, questionsOrigin));
+            setIsLoading(false);
+            return;
+        }
+
+        handleAskQuestion(question);
+        setPersonalizedDialogue(question.answer);
+        setPlayerActions(buildQuestionAnswerActions(questionsOrigin));
+        setIsLoading(false);
+        return;
+    }
+
     const processLog = finalizeLogging(action.action);
 
     setIsLoading(true);
@@ -433,10 +648,29 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
         const { sequence, nodeIndex } = currentMeeting;
         switch (action.action) {
             case 'start_meeting_sequence': {
+                setConversationMode('in_sequence');
                 const firstNodeId = sequence.nodes[0];
                 const scenario = scenarioData.scenarios.find(s => s.node_id === firstNodeId);
                 if (scenario) {
                     presentScenario(scenario);
+                }
+                setIsLoading(false);
+                return;
+            }
+            case 'NEXT': {
+                const nextNodeIndex = nodeIndex + 1;
+                if (nextNodeIndex >= sequence.nodes.length) {
+                    setPersonalizedDialogue(sequence.finalDialogue);
+                    setConversationMode('post_sequence');
+                    setPlayerActions(buildPostSequenceActions(characterInFocus));
+                    setIsLoading(false);
+                    return;
+                }
+                setCurrentMeeting(prev => ({ ...prev!, nodeIndex: nextNodeIndex }));
+                const nextNodeId = sequence.nodes[nextNodeIndex];
+                const nextScenario = scenarioData.scenarios.find(s => s.node_id === nextNodeId);
+                if (nextScenario) {
+                    presentScenario(nextScenario);
                 }
                 setIsLoading(false);
                 return;
@@ -454,7 +688,8 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
             }
             case 'end_meeting_sequence':
                 setPersonalizedDialogue(sequence.finalDialogue);
-                setPlayerActions([{ label: "Concluir Reunión", cost: "Finalizar", action: "conclude_meeting" }]);
+                setConversationMode('post_sequence');
+                setPlayerActions(buildPostSequenceActions(characterInFocus));
                 setIsLoading(false);
                 return;
         }
@@ -541,6 +776,9 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
     if (action.action === 'conclude_meeting') {
         const justCompletedSequenceId = currentMeeting?.sequence.sequence_id;
         setCurrentMeeting(null);
+        setConversationMode('idle');
+        setQuestionsOrigin(null);
+        setQuestionsBaseDialogue('');
         advanceTimeAndUpdateFocus(justCompletedSequenceId);
         setIsLoading(false);
         return;
@@ -556,20 +794,12 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
         const option = scenario.options.find(o => o.option_id === action.action);
         if (option) {
             const { consequences } = option;
+            const globalEffects = resolveGlobalEffects(consequences);
+            setHoveredGlobalEffects(null);
             mechanicEngine.emitEvent('dialogue', 'decision_made', {
                 node_id: scenario.node_id,
                 option_id: option.option_id
             });
-
-            const decisionLogEntry: DecisionLogEntry = {
-                day: gameState.day,
-                timeSlot: gameState.timeSlot,
-                stakeholder: characterInFocus.name,
-                nodeId: scenario.node_id,
-                choiceId: option.option_id,
-                choiceText: option.text,
-                consequences: consequences
-            };
 
             setGameState(prev => {
                 const newStakeholders = prev.stakeholders.map(sh => {
@@ -583,10 +813,28 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
                     return sh;
                 });
 
+                const globalEffectsBefore = { budget: prev.budget, reputation: prev.reputation };
+                const nextBudget = prev.budget + globalEffects.deltas.budget;
+                const nextReputation = clampReputation(prev.reputation + globalEffects.deltas.reputation);
+                const globalEffectsAfter = { budget: nextBudget, reputation: nextReputation };
+                const decisionLogEntry: DecisionLogEntry = {
+                    day: prev.day,
+                    timeSlot: prev.timeSlot,
+                    stakeholder: characterInFocus.name,
+                    nodeId: scenario.node_id,
+                    choiceId: option.option_id,
+                    choiceText: option.text,
+                    consequences: consequences,
+                    globalEffectsShown: globalEffects.ui,
+                    globalEffectsApplied: globalEffects.real,
+                    globalEffectsBefore,
+                    globalEffectsAfter
+                };
+
                 return {
                     ...prev,
-                    budget: prev.budget + (consequences.budgetChange ?? 0),
-                    reputation: Math.max(0, Math.min(100, prev.reputation + (consequences.reputationChange ?? 0))),
+                    budget: nextBudget,
+                    reputation: nextReputation,
                     projectProgress: Math.max(0, Math.min(100, prev.projectProgress + (consequences.projectProgressChange ?? 0))),
                     stakeholders: newStakeholders,
                     completedScenarios: [...prev.completedScenarios, scenario.node_id],
@@ -605,7 +853,12 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
                     setPlayerActions([{ label: "Continuar...", cost: "Continuar", action: "continue_meeting_sequence" }]);
                 }
             } else {
-                setPlayerActions([{ label: "Concluir Reunión", cost: "Finalizar", action: "conclude_meeting" }]);
+                if (hasQuestionsFor(characterInFocus)) {
+                    setConversationMode('post_sequence');
+                    setPlayerActions(buildPostSequenceActions(characterInFocus));
+                } else {
+                    setPlayerActions([{ label: "Concluir Reunion", cost: "Finalizar", action: "conclude_meeting" }]);
+                }
             }
             setCountdown(PERIOD_DURATION);
         }
@@ -676,10 +929,14 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
     setCountdown(PERIOD_DURATION);
     setActiveTab('interaction');
     setGameState(INITIAL_GAME_STATE);
+    setHoveredGlobalEffects(null);
     setSecretary(null);
     setSchedulingState('none');
     setSelectedSlot(null);
     setStakeholderToSchedule(null);
+    setConversationMode('idle');
+    setQuestionsOrigin(null);
+    setQuestionsBaseDialogue('');
     sessionStartRef.current = null;
     sessionEndRef.current = null;
     sessionIdRef.current = crypto.randomUUID();
@@ -691,6 +948,9 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
     sessionEndRef.current = null;
     sessionIdRef.current = crypto.randomUUID();
     setGameState({ ...INITIAL_GAME_STATE, playerName: name });
+    setConversationMode('idle');
+    setQuestionsOrigin(null);
+    setQuestionsBaseDialogue('');
     setIsGameStarted(true);
     if (enabledMechanics.length > 0) {
       setActiveTab(enabledMechanics[0].tab_id);
@@ -735,13 +995,16 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
     characterInFocus,
     currentDialogue,
     playerActions,
+    conversationMode,
     isLoading,
     gameStatus,
     currentMeeting,
     onPlayerAction: handlePlayerAction,
     onNavigateTab: (tabId) => setActiveTab(tabId),
     onSlotSelect: handleSlotSelect,
-    onRequestMeeting: handleRequestMeeting
+    onRequestMeeting: handleRequestMeeting,
+    onActionHover: handleActionHover,
+    onAskQuestion: handleAskQuestion
   };
 
   const mechanicContextValue = {
@@ -791,6 +1054,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
           onAdvanceTime={handleManualAdvance}
           onOpenSidebar={() => setIsSidebarOpen(true)}
           periodDuration={PERIOD_DURATION}
+          globalEffectsHighlight={hoveredGlobalEffects}
         />
 
         <div className="border-b border-gray-700 mt-4 overflow-x-auto">

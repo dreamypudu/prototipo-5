@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { GameState, TimeSlotType } from '../types';
+import { EffectMagnitude, GameState, GlobalEffectsUI, TimeSlotType } from '../types';
 import { getGameDate } from '../constants';
 
 interface HeaderProps {
@@ -11,6 +11,7 @@ interface HeaderProps {
   onAdvanceTime: () => void;
   onOpenSidebar: () => void;
   periodDuration?: number;
+  globalEffectsHighlight?: GlobalEffectsUI | null;
 }
 
 const TimeDisplay: React.FC<{ day: number; deadline: number; slot: TimeSlotType; countdown: number; isPaused: boolean; onTogglePause: () => void; onAdvance: () => void; periodDuration: number; }> = ({ day, deadline, slot, countdown, isPaused, onTogglePause, onAdvance, periodDuration }) => {
@@ -43,7 +44,35 @@ const TimeDisplay: React.FC<{ day: number; deadline: number; slot: TimeSlotType;
 };
 
 
-const Header: React.FC<HeaderProps> = ({ gameState, countdown, isTimerPaused, onTogglePause, onAdvanceTime, onOpenSidebar, periodDuration = 90 }) => {
+const getMagnitudeSize = (magnitude: EffectMagnitude): string => {
+    if (magnitude === 'S') return 'w-2 h-2';
+    if (magnitude === 'M') return 'w-3 h-3';
+    return 'w-4 h-4';
+};
+
+const GlobalStat: React.FC<{
+    label: string;
+    value: number;
+    highlight?: EffectMagnitude;
+    accentClass: string;
+}> = ({ label, value, highlight, accentClass }) => {
+    return (
+        <div className={`flex items-center gap-2 bg-gray-800/60 p-2 rounded-md border transition-colors ${highlight ? 'border-yellow-400 shadow-[0_0_12px_rgba(250,204,21,0.4)]' : 'border-gray-700'}`}>
+            <div className={`w-2 h-2 rounded-full ${accentClass}`} />
+            <div className="flex flex-col">
+                <span className="text-xs text-gray-400 uppercase tracking-wider">{label}</span>
+                <span className="text-sm font-bold text-white">{value.toLocaleString()}</span>
+            </div>
+            {highlight && (
+                <span className={`ml-2 rounded-full bg-yellow-300 ${getMagnitudeSize(highlight)}`} />
+            )}
+        </div>
+    );
+};
+
+const Header: React.FC<HeaderProps> = ({ gameState, countdown, isTimerPaused, onTogglePause, onAdvanceTime, onOpenSidebar, periodDuration = 90, globalEffectsHighlight }) => {
+  const budgetHighlight = globalEffectsHighlight?.budget;
+  const reputationHighlight = globalEffectsHighlight?.reputation;
   return (
     <header className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -57,17 +86,23 @@ const Header: React.FC<HeaderProps> = ({ gameState, countdown, isTimerPaused, on
                 <SettingsIcon />
             </button>
         </div>
-        <div className="w-full md:w-auto min-w-[300px]">
-            <TimeDisplay 
-                day={gameState.day} 
-                deadline={gameState.projectDeadline} 
-                slot={gameState.timeSlot} 
-                countdown={countdown}
-                isPaused={isTimerPaused}
-                onTogglePause={onTogglePause}
-                onAdvance={onAdvanceTime}
-                periodDuration={periodDuration}
-             />
+        <div className="w-full md:w-auto flex flex-col md:flex-row gap-3 items-stretch">
+            <div className="flex flex-wrap gap-3">
+                <GlobalStat label="Presupuesto" value={gameState.budget} highlight={budgetHighlight} accentClass="bg-emerald-400" />
+                <GlobalStat label="Reputacion" value={gameState.reputation} highlight={reputationHighlight} accentClass="bg-sky-400" />
+            </div>
+            <div className="min-w-[300px]">
+                <TimeDisplay 
+                    day={gameState.day} 
+                    deadline={gameState.projectDeadline} 
+                    slot={gameState.timeSlot} 
+                    countdown={countdown}
+                    isPaused={isTimerPaused}
+                    onTogglePause={onTogglePause}
+                    onAdvance={onAdvanceTime}
+                    periodDuration={periodDuration}
+                 />
+            </div>
         </div>
       </div>
     </header>

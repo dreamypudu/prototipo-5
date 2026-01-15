@@ -1,13 +1,14 @@
 
 
 import React from 'react';
-import { PlayerAction } from '../types';
+import { GlobalEffectsUI, PlayerAction } from '../types';
 import { logEvent } from '../services/Timelogger';
 
 interface ActionBarProps {
   actions: PlayerAction[];
   onAction: (action: PlayerAction) => void;
   disabled: boolean;
+  onHoverEffects?: (effects: GlobalEffectsUI | null) => void;
 }
 
 const getRiskColor = (riskLevel: string) => {
@@ -19,12 +20,24 @@ const getRiskColor = (riskLevel: string) => {
     }
 };
 
-const ActionCard: React.FC<{ action: PlayerAction, onAction: (action: PlayerAction) => void, disabled: boolean }> = ({ action, onAction, disabled }) => {
+const ActionCard: React.FC<{ action: PlayerAction, onAction: (action: PlayerAction) => void, disabled: boolean; onHoverEffects?: (effects: GlobalEffectsUI | null) => void }> = ({ action, onAction, disabled, onHoverEffects }) => {
+    const handleEnter = () => {
+        logEvent('hover_enter', { option_id: action.action });
+        const effects = action.globalEffectsUI;
+        const hasEffects = effects && Object.keys(effects).length > 0;
+        onHoverEffects?.(hasEffects ? effects : null);
+    };
+    const handleLeave = () => {
+        logEvent('hover_leave', { option_id: action.action });
+        onHoverEffects?.(null);
+    };
     return (
         <button
             onClick={() => onAction(action)}
-            onMouseEnter={() => logEvent('hover_enter', { option_id: action.action })}
-            onMouseLeave={() => logEvent('hover_leave', { option_id: action.action })}
+            onMouseEnter={handleEnter}
+            onMouseLeave={handleLeave}
+            onFocus={handleEnter}
+            onBlur={handleLeave}
             disabled={disabled}
             className="col-span-1 md:col-span-2 text-left bg-gray-900/50 p-3 rounded-lg border border-gray-700 hover:bg-gray-800/70 hover:border-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-900/50 disabled:hover:border-gray-700 flex flex-col justify-between"
         >
@@ -44,31 +57,63 @@ const ActionCard: React.FC<{ action: PlayerAction, onAction: (action: PlayerActi
     );
 };
 
-const SimpleButton: React.FC<{ action: PlayerAction, onAction: (action: PlayerAction) => void, disabled: boolean }> = ({ action, onAction, disabled }) => {
+const getSimpleButtonClasses = (action: PlayerAction, disabled: boolean) => {
+    const base = "col-span-1 md:col-span-2 font-semibold py-3 px-4 rounded-lg text-center transition-all duration-200 ease-in-out transform flex flex-col items-center justify-center shadow-md hover:shadow-lg disabled:shadow-none";
+    const state = "disabled:cursor-not-allowed disabled:scale-100";
+    if (action.uiVariant === 'muted') {
+        return `${base} ${state} bg-transparent border border-gray-600 text-gray-400 hover:bg-gray-800/40 hover:text-gray-300 hover:scale-100`;
+    }
+    if (action.uiVariant === 'danger') {
+        return `${base} ${state} bg-red-600/20 border border-red-500/40 text-red-300 hover:bg-red-600/30 hover:scale-100`;
+    }
+    if (action.uiVariant === 'success') {
+        return `${base} ${state} bg-green-600 hover:bg-green-500 text-white hover:scale-105 active:scale-100 disabled:bg-gray-600`;
+    }
+    return `${base} ${state} bg-blue-600 hover:bg-blue-500 text-white hover:scale-105 active:scale-100 disabled:bg-gray-600`;
+};
+
+const SimpleButton: React.FC<{ action: PlayerAction, onAction: (action: PlayerAction) => void, disabled: boolean; onHoverEffects?: (effects: GlobalEffectsUI | null) => void }> = ({ action, onAction, disabled, onHoverEffects }) => {
+    const handleEnter = () => {
+        logEvent('hover_enter', { option_id: action.action });
+        const effects = action.globalEffectsUI;
+        const hasEffects = effects && Object.keys(effects).length > 0;
+        onHoverEffects?.(hasEffects ? effects : null);
+    };
+    const handleLeave = () => {
+        logEvent('hover_leave', { option_id: action.action });
+        onHoverEffects?.(null);
+    };
     return (
         <button
             onClick={() => onAction(action)}
-            onMouseEnter={() => logEvent('hover_enter', { option_id: action.action })}
-            onMouseLeave={() => logEvent('hover_leave', { option_id: action.action })}
-            disabled={disabled}
-            className="col-span-1 md:col-span-2 bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg text-center transition-all duration-200 ease-in-out transform hover:bg-blue-500 hover:scale-105 active:scale-100 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:scale-100 flex flex-col items-center justify-center shadow-md hover:shadow-lg disabled:shadow-none"
+            onMouseEnter={handleEnter}
+            onMouseLeave={handleLeave}
+            onFocus={handleEnter}
+            onBlur={handleLeave}
+            disabled={disabled || action.isLocked}
+            className={getSimpleButtonClasses(action, disabled)}
         >
-             <div>{action.label}</div>
+             <div className="flex items-center justify-center gap-2">
+                {action.isLocked && (
+                    <span className="text-sm" aria-hidden="true">🔒</span>
+                )}
+                <span>{action.label}</span>
+             </div>
             <div className="text-xs font-normal text-blue-200/80">{action.cost}</div>
         </button>
     );
 };
 
 
-const ActionBar: React.FC<ActionBarProps> = ({ actions, onAction, disabled }) => {
+const ActionBar: React.FC<ActionBarProps> = ({ actions, onAction, disabled, onHoverEffects }) => {
   return (
     <div>
       <h3 className="text-lg font-semibold mb-3 text-center text-blue-300">Your Actions</h3>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {actions.map((action, index) => (
            action.description ? 
-            <ActionCard key={`${action.action}-${index}`} action={action} onAction={onAction} disabled={disabled} /> :
-            <SimpleButton key={`${action.action}-${index}`} action={action} onAction={onAction} disabled={disabled} />
+            <ActionCard key={`${action.action}-${index}`} action={action} onAction={onAction} disabled={disabled} onHoverEffects={onHoverEffects} /> :
+            <SimpleButton key={`${action.action}-${index}`} action={action} onAction={onAction} disabled={disabled} onHoverEffects={onHoverEffects} />
         ))}
       </div>
     </div>

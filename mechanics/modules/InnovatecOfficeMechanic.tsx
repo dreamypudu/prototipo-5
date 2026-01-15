@@ -24,7 +24,8 @@ const InnovatecOfficeMechanic: React.FC = () => {
     gameStatus,
     onPlayerAction,
     onSlotSelect,
-    onRequestMeeting
+    onRequestMeeting,
+    onActionHover
   } = office;
 
   const renderCentralPanel = () => {
@@ -118,6 +119,7 @@ const InnovatecOfficeMechanic: React.FC = () => {
                 actions={playerActions}
                 onAction={onPlayerAction}
                 disabled={isLoading || gameStatus !== 'playing'}
+                onHoverEffects={onActionHover}
               />
             )}
           </div>

@@ -1,5 +1,6 @@
 
 import { GameState, TimeSlotType, DirectorObjectives, StaffMember, ScheduleAssignment, DayOfWeek, ScheduleBlock, RoomDefinition } from './types';
+import { CESFAM_QUESTIONS } from './data/questions';
 
 export const TIME_SLOTS: TimeSlotType[] = ['mañana', 'tarde'];
 
@@ -233,6 +234,8 @@ export const INITIAL_GAME_STATE: GameState = {
       agenda: ["Mantener el orden administrativo.", "Evitar conflictos legales.", "Asegurar que el Director tenga la información correcta."],
       commitments: [],
       informationTiers: [],
+      questions: CESFAM_QUESTIONS['sofia-castro'] ?? [],
+      questionsAsked: [],
       status: 'ok',
       lastMetDay: 0,
     },
@@ -256,6 +259,8 @@ export const INITIAL_GAME_STATE: GameState = {
         { trustThreshold: 60, information: "Está negociando un convenio con la Universidad a espaldas de la Dirección." },
         { trustThreshold: 80, information: "Usa su influencia política externa como amenaza si no consigue recursos." }
       ],
+      questions: CESFAM_QUESTIONS['andres-guzman'] ?? [],
+      questionsAsked: [],
       status: 'ok',
       lastMetDay: 0,
     },
@@ -274,6 +279,8 @@ export const INITIAL_GAME_STATE: GameState = {
       ],
       commitments: [],
       informationTiers: [],
+      questions: CESFAM_QUESTIONS['paz-herrera'] ?? [],
+      questionsAsked: [],
       status: 'ok',
       lastMetDay: 0,
     },
@@ -294,6 +301,8 @@ export const INITIAL_GAME_STATE: GameState = {
       informationTiers: [
         { trustThreshold: 50, information: "Está cubriendo errores de registro de Herrera para evitar problemas." }
       ],
+      questions: CESFAM_QUESTIONS['javier-castro'] ?? [],
+      questionsAsked: [],
       status: 'ok',
       lastMetDay: 0,
     },
@@ -316,6 +325,8 @@ export const INITIAL_GAME_STATE: GameState = {
       informationTiers: [
         { trustThreshold: 70, information: "Tiene preparada una denuncia a Contraloría si se violan los descansos." }
       ],
+      questions: CESFAM_QUESTIONS['marcela-soto'] ?? [],
+      questionsAsked: [],
       status: 'ok',
       lastMetDay: 0,
     },
@@ -334,6 +345,8 @@ export const INITIAL_GAME_STATE: GameState = {
       ],
       commitments: [],
       informationTiers: [],
+      questions: CESFAM_QUESTIONS['eduardo-naranjo'] ?? [],
+      questionsAsked: [],
       status: 'ok',
       lastMetDay: 0,
     },
@@ -354,6 +367,8 @@ export const INITIAL_GAME_STATE: GameState = {
       informationTiers: [
         { trustThreshold: 40, information: "Está recopilando antecedentes para una acusación por acoso laboral." }
       ],
+      questions: CESFAM_QUESTIONS['claudia-morales'] ?? [],
+      questionsAsked: [],
       status: 'ok',
       lastMetDay: 0,
     },
@@ -376,6 +391,8 @@ export const INITIAL_GAME_STATE: GameState = {
         informationTiers: [
           { trustThreshold: 60, information: "Ha autorizado entregas de medicamentos sin receta completa para ayudar a vecinos." }
         ],
+        questions: CESFAM_QUESTIONS['daniel-rios'] ?? [],
+        questionsAsked: [],
         status: 'ok',
         lastMetDay: 0,
     },
@@ -394,6 +411,8 @@ export const INITIAL_GAME_STATE: GameState = {
         ],
         commitments: [],
         informationTiers: [],
+        questions: CESFAM_QUESTIONS['francisca-solis'] ?? [],
+        questionsAsked: [],
         status: 'ok',
         lastMetDay: 0,
     },
@@ -414,6 +433,8 @@ export const INITIAL_GAME_STATE: GameState = {
         informationTiers: [
           { trustThreshold: 50, information: "Ya tuvo una entrevista en una clínica privada la semana pasada." }
         ],
+        questions: CESFAM_QUESTIONS['ricardo-meza'] ?? [],
+        questionsAsked: [],
         status: 'ok',
         lastMetDay: 0,
     }
@@ -447,6 +468,7 @@ export const INITIAL_GAME_STATE: GameState = {
   completedSequences: [],
   criticalWarnings: [],
   decisionLog: [],
+  questionLog: [],
   processLog: [],
   inbox: [],
   stakeholder_preferences: {},

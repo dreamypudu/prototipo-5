@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { DecisionLogEntry, ProcessLogEntry, PlayerActionLogEntry, MechanicEvent, CanonicalAction, ExpectedAction } from '../types';
+import { DecisionLogEntry, ProcessLogEntry, PlayerActionLogEntry, MechanicEvent, CanonicalAction, ExpectedAction, QuestionLogEntry } from '../types';
 import { SessionExport } from '../services/sessionExport';
 
 interface DataExportProps {
@@ -10,12 +10,13 @@ interface DataExportProps {
     mechanicEvents: MechanicEvent[];
     canonicalActions: CanonicalAction[];
     expectedActions: ExpectedAction[];
+    questionLog: QuestionLogEntry[];
     sessionExport: SessionExport;
 }
 
 const DataExport: React.FC<DataExportProps> = ({ 
     decisionLog, processLog, playerActionsLog, 
-    mechanicEvents, canonicalActions, expectedActions, sessionExport
+    mechanicEvents, canonicalActions, expectedActions, questionLog, sessionExport
 }) => {
 
     const downloadJSON = (data: any, filename: string) => {
@@ -27,7 +28,7 @@ const DataExport: React.FC<DataExportProps> = ({
         link.download = filename;
         link.click();
     };
-    const hasSessionData = decisionLog.length > 0 || canonicalActions.length > 0 || expectedActions.length > 0 || mechanicEvents.length > 0 || processLog.length > 0;
+    const hasSessionData = decisionLog.length > 0 || canonicalActions.length > 0 || expectedActions.length > 0 || mechanicEvents.length > 0 || processLog.length > 0 || questionLog.length > 0;
     const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
     const [sendError, setSendError] = useState<string | null>(null);
@@ -167,6 +168,22 @@ const DataExport: React.FC<DataExportProps> = ({
                     </button>
                 </div>
 
+
+
+                {/* 6. NPC Questions */}
+                <div className="bg-gray-900/50 p-6 rounded-lg border border-gray-700 flex flex-col">
+                    <h3 className="text-xl font-bold text-pink-300">Preguntas a NPC</h3>
+                    <p className="text-xs text-gray-500 mt-2 mb-4 flex-grow italic">
+                        Registro de preguntas realizadas, requisitos y contexto al momento de preguntar.
+                    </p>
+                    <button
+                        onClick={() => downloadJSON(questionLog, "npc_questions.json")}
+                        disabled={questionLog.length === 0}
+                        className="w-full bg-pink-600 hover:bg-pink-500 text-white font-bold py-2 rounded-lg disabled:opacity-50"
+                    >
+                        JSON: Preguntas ({questionLog.length})
+                    </button>
+                </div>
             </div>
 
             <style>{`

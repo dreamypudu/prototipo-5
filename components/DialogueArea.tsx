@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Stakeholder, TimeSlotType } from '../types';
 import { useTypewriter } from '../hooks/useTypewriter';
@@ -18,7 +17,7 @@ const backgroundImages: Record<TimeSlotType, string> = {
 
 const DialogueArea: React.FC<DialogueAreaProps> = ({ stakeholder, participants, dialogue, timeSlot }) => {
   const displayedText = useTypewriter(dialogue, 30);
-  const bgImage = backgroundImages[timeSlot] || backgroundImages.mañana;
+  const bgImage = backgroundImages[timeSlot] || backgroundImages['mañana'];
 
   // Use passed participants, or fallback to just the current stakeholder if not provided
   const activeParticipants = participants && participants.length > 0 ? participants : [stakeholder];

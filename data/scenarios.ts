@@ -277,25 +277,25 @@ export const scenarios: ScenarioFile = {
         node_id: "SCHEDULE_WAR_INTRO",
         stakeholderRole: "Jefe Sector Azul",
         dialogue: "Director, buenos días. He adelantado trabajo: aquí está la planificación del Sector Azul. Reservé el Box 5 todas las mañanas para el equipo de investigación. Tenemos el convenio universitario respirándonos en la nuca.",
-        options: [{ option_id: "NEXT", text: "...", tags: {}, consequences: { dialogueResponse: "..." } }]
+        options: [{ option_id: "NEXT", text: "Siguiente", tags: {}, consequences: { dialogueResponse: "" } }]
     },
     {
         node_id: "SCHEDULE_WAR_SOTO",
         stakeholderRole: "Jefa Sector Rojo",
         dialogue: "Un momento, Andrés. Director, en mi propuesta prioricé los bloques administrativos. Estamos atrasados con las auditorías IAAS. Además, vi que Andrés bloqueó el Box 5... eso es imposible. Mis TENS lo necesitan para curaciones complejas.",
-        options: [{ option_id: "NEXT", text: "...", tags: {}, consequences: { dialogueResponse: "..." } }]
+        options: [{ option_id: "NEXT", text: "Siguiente", tags: {}, consequences: { dialogueResponse: "" } }]
     },
     {
         node_id: "SCHEDULE_WAR_RIOS",
         stakeholderRole: "Jefe Sector Amarillo",
         dialogue: "Con todo respeto, mientras ustedes pelean por auditorías y papers, la sala de espera está que explota. Mi propuesta es simple: todos a atender. Necesito Box, cualquiera, ahora. Si priorizamos 'investigación' sobre la gente, los vecinos quemarán el CESFAM.",
-        options: [{ option_id: "NEXT", text: "...", tags: {}, consequences: { dialogueResponse: "..." } }]
+        options: [{ option_id: "NEXT", text: "Siguiente", tags: {}, consequences: { dialogueResponse: "" } }]
     },
     {
         node_id: "SCHEDULE_WAR_GUZMAN_RETORT",
         stakeholderRole: "Jefe Sector Azul",
         dialogue: "Daniel, por favor. Sin investigación no hay prestigio, y sin prestigio no hay fondos. Es visión estratégica.",
-        options: [{ option_id: "NEXT", text: "...", tags: {}, consequences: { dialogueResponse: "..." } }]
+        options: [{ option_id: "NEXT", text: "Siguiente", tags: {}, consequences: { dialogueResponse: "" } }]
     },
     {
         node_id: "SCHEDULE_WAR_SOTO_FINAL",
@@ -329,7 +329,7 @@ export const scenarios: ScenarioFile = {
         initialDialogue: "Director {playerName}. Soy Sofía Castro, su administrativa de confianza. Lamento no haber podido presentarme antes, la mañana ha sido caótica.",
         nodes: ["INTRO_S1_WELCOME"],
         finalDialogue: "Excelente. Le dejo instalarse. Recuerde revisar el mapa para visitar a los equipos.",
-        triggerMap: { day: 1, slot: 'tarde' }, 
+        triggerMap: { day: 2, slot: 'tarde' }, 
         isInevitable: true
     },
     {
@@ -347,7 +347,7 @@ export const scenarios: ScenarioFile = {
         initialDialogue: "Director, disculpe la interrupción abrupta, pero tenemos una situación crítica en Farmacia.",
         nodes: ["CRISIS_FARM_S1"],
         finalDialogue: "Procederé con su instrucción inmediatamente.",
-        triggerMap: { day: 2, slot: 'mañana' }, 
+        triggerMap: { day: 5, slot: 'tarde' }, 
         isInevitable: true
     },
     {

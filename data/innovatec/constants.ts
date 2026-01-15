@@ -1,4 +1,5 @@
 import { GameState, TimeSlotType, DirectorObjectives } from '../../types';
+import { INNOVATEC_QUESTIONS } from './questions';
 
 export const TIME_SLOTS: TimeSlotType[] = ['mañana', 'tarde', 'noche'];
 
@@ -37,6 +38,8 @@ export const INITIAL_GAME_STATE: GameState = {
       agenda: ["Asegurar que el proyecto avance sin problemas y proteger al CTO de distracciones innecesarias."],
       commitments: [],
       informationTiers: [],
+      questions: INNOVATEC_QUESTIONS['laura-fernandez'] ?? [],
+      questionsAsked: [],
       status: 'ok',
       lastMetDay: 0,
     },
@@ -58,6 +61,8 @@ export const INITIAL_GAME_STATE: GameState = {
         { trustThreshold: 60, information: "Está bajo presión del directorio para cortar gastos en proyectos 'experimentales'." },
         { trustThreshold: 80, information: "Tiene un presupuesto de contingencia, pero solo lo liberará si el proyecto demuestra un éxito temprano y tangible." }
       ],
+      questions: INNOVATEC_QUESTIONS['ricardo-vargas'] ?? [],
+      questionsAsked: [],
       status: 'ok',
       lastMetDay: 0,
     },
@@ -79,6 +84,8 @@ export const INITIAL_GAME_STATE: GameState = {
         { trustThreshold: 50, information: "Está compitiendo directamente contigo por el presupuesto del próximo año." },
         { trustThreshold: 75, information: "Tiene una relación cercana con un influyente periodista de tecnología." }
       ],
+      questions: INNOVATEC_QUESTIONS['carolina-soto'] ?? [],
+      questionsAsked: [],
       status: 'ok',
       lastMetDay: 0,
     },
@@ -100,6 +107,8 @@ export const INITIAL_GAME_STATE: GameState = {
           { trustThreshold: 60, information: "El equipo está sufriendo de 'burnout' por proyectos anteriores mal gestionados." },
           { trustThreshold: 80, information: "Sabe de una solución tecnológica alternativa que podría ser mejor, pero requeriría re-evaluar el plan del proyecto." }
         ],
+        questions: INNOVATEC_QUESTIONS['david-reyes'] ?? [],
+        questionsAsked: [],
         status: 'ok',
         lastMetDay: 0,
     },
@@ -120,6 +129,8 @@ export const INITIAL_GAME_STATE: GameState = {
         informationTiers: [
           { trustThreshold: 70, information: "Fue la autora principal del manual de metodología que ahora defiendes." },
         ],
+        questions: INNOVATEC_QUESTIONS['monica-flores'] ?? [],
+        questionsAsked: [],
         status: 'ok',
         lastMetDay: 0,
     },
@@ -140,6 +151,8 @@ export const INITIAL_GAME_STATE: GameState = {
       informationTiers: [
         { trustThreshold: 75, information: "Está lidiando con un aumento de quejas anónimas sobre estrés laboral en toda la empresa." }
       ],
+      questions: INNOVATEC_QUESTIONS['javier-nunez'] ?? [],
+      questionsAsked: [],
       status: 'ok',
       lastMetDay: 0,
     }
@@ -173,6 +186,7 @@ export const INITIAL_GAME_STATE: GameState = {
   completedSequences: [],
   criticalWarnings: [],
   decisionLog: [],
+  questionLog: [],
   processLog: [],
   inbox: [],
   stakeholder_preferences: {},

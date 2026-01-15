@@ -1,9 +1,12 @@
 import type { ComponentType } from 'react';
 import type {
+  ConversationMode,
   GameStatus,
+  GlobalEffectsUI,
   MeetingSequence,
   PlayerAction,
   ScheduleAssignment,
+  StakeholderQuestion,
   StaffMember,
   Stakeholder,
   TimeSlotType
@@ -33,11 +36,14 @@ export interface OfficeBaseState {
   characterInFocus: Stakeholder | null;
   currentDialogue: string;
   playerActions: PlayerAction[];
+  conversationMode: ConversationMode;
   isLoading: boolean;
   gameStatus: GameStatus;
   currentMeeting: { sequence: MeetingSequence; nodeIndex: number } | null;
   onPlayerAction: (action: PlayerAction) => void;
   onNavigateTab: (tabId: string) => void;
+  onActionHover?: (effects: GlobalEffectsUI | null) => void;
+  onAskQuestion?: (question: StakeholderQuestion) => void;
 }
 
 export interface DefaultOfficeState extends OfficeBaseState {

@@ -7,6 +7,7 @@ import {
   MechanicEvent,
   PlayerActionLogEntry,
   ProcessLogEntry,
+  QuestionLogEntry,
   SimulatorConfig
 } from '../types';
 import { compareExpectedVsActual } from './ComparisonEngine';
@@ -26,6 +27,7 @@ export interface SessionExport {
   comparisons: ComparisonResult[];
   process_log: ProcessLogEntry[];
   player_actions_log: PlayerActionLogEntry[];
+  question_log: QuestionLogEntry[];
   final_state: {
     stakeholders: GameState['stakeholders'];
     global: {
@@ -80,6 +82,7 @@ export const buildSessionExport = ({
     comparisons,
     process_log: gameState.processLog,
     player_actions_log: gameState.playerActionsLog,
+    question_log: gameState.questionLog,
     final_state: {
       stakeholders: gameState.stakeholders,
       global: {
