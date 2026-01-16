@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ConversationMode, GameState, GlobalEffectsUI, Stakeholder, StakeholderQuestion, PlayerAction, TimeSlotType, MeetingSequence, ScenarioNode, DecisionLogEntry, InboxEmail, MechanicConfig, SimulatorConfig, GameStatus, QuestionLogEntry } from '../types';
 import { INITIAL_GAME_STATE, TIME_SLOTS, DIRECTOR_OBJECTIVES, SECRETARY_ROLE } from '../data/innovatec/constants';
 import { scenarios as scenarioData } from '../data/innovatec/scenarios';
@@ -8,6 +8,7 @@ import { mechanicEngine } from '../services/MechanicEngine';
 import { compareExpectedVsActual } from '../services/ComparisonEngine';
 import { buildSessionExport } from '../services/sessionExport';
 import { clampReputation, resolveGlobalEffects } from '../services/globalEffects';
+import type { DailyEffectSummary } from '../types';
 import { INNOVATEC_REGISTRY } from '../mechanics/innovatecRegistry';
 import { MechanicProvider } from '../mechanics/MechanicContext';
 import { MechanicDispatchAction, OfficeState } from '../mechanics/types';
@@ -28,6 +29,28 @@ interface InnovatecGameProps {
 
 const PERIOD_DURATION = 30; // 30 seconds per time slot
 const API_BASE_URL = (import.meta as any)?.env?.VITE_API_URL || 'http://localhost:8000';
+
+const summarizeDeltas = (
+  day: number,
+  globalDeltas: { budget?: number; reputation?: number },
+  stakeholderDeltas: Record<string, any>,
+  stakeholders: Stakeholder[]
+): DailyEffectSummary => {
+  const parts: string[] = [];
+  const b = Number(globalDeltas?.budget || 0);
+  const r = Number(globalDeltas?.reputation || 0);
+  parts.push(`Presupuesto ${b >= 0 ? '+' : ''}${b}`);
+  parts.push(`Reputación ${r >= 0 ? '+' : ''}${r}`);
+  const stakeParts: string[] = [];
+  Object.entries(stakeholderDeltas || {}).forEach(([id, delta]) => {
+    const sh = stakeholders.find(s => s.id === id);
+    if (!sh) return;
+    const t = Number(delta?.trust || 0);
+    const s = Number(delta?.support || 0);
+    stakeParts.push(`${sh.name}: confianza ${t >= 0 ? '+' : ''}${t}, apoyo ${s >= 0 ? '+' : ''}${s}`);
+  });
+  return { day, summary: parts.join(' | '), stakeholderDetails: stakeParts };
+};
 
 type ResolvedMechanicConfig = MechanicConfig & {
     label: string;
@@ -52,7 +75,7 @@ const resolveMechanics = (config: SimulatorConfig | null): ResolvedMechanicConfi
 };
 
 const getInitialSecretaryActions = (): PlayerAction[] => [
-    { label: "Agendar una Reunión", cost: "Gratis", action: "schedule_meeting" },
+    { label: "Agendar una Reuni├│n", cost: "Gratis", action: "schedule_meeting" },
 ];
 
 
@@ -87,6 +110,8 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
   const [conversationMode, setConversationMode] = useState<ConversationMode>('idle');
   const [questionsOrigin, setQuestionsOrigin] = useState<ConversationMode | null>(null);
   const [questionsBaseDialogue, setQuestionsBaseDialogue] = useState<string>('');
+  const [dailySummary, setDailySummary] = useState<DailyEffectSummary | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const enabledMechanics = resolveMechanics(config);
   const syncLogs = useMechanicLogSync(setGameState);
   const stageTabs = [
@@ -114,6 +139,11 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
 
   const handleActionHover = useCallback((effects: GlobalEffectsUI | null) => {
     setHoveredGlobalEffects(effects);
+  }, []);
+
+  const showToast = useCallback((msg: string, durationMs = 5000) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), durationMs);
   }, []);
 
   const hasQuestionsFor = (stakeholder: Stakeholder | null): boolean => {
@@ -213,7 +243,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
 
     // --- Win Condition ---
     if (projectProgress >= DIRECTOR_OBJECTIVES.minProgress) {
-        setEndGameMessage(`¡Proyecto Exitoso! Has navegado las complejidades de la organización y la implementación de la plataforma de IA es un éxito. Cumpliste el plazo, te mantuviste en presupuesto y manejaste las relaciones críticas.`);
+        setEndGameMessage(`┬íProyecto Exitoso! Has navegado las complejidades de la organizaci├│n y la implementaci├│n de la plataforma de IA es un ├®xito. Cumpliste el plazo, te mantuviste en presupuesto y manejaste las relaciones cr├¡ticas.`);
         setGameStatus('won');
         return;
     }
@@ -225,7 +255,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
     let stakeholdersWereUpdated = false;
     requiredStakeholders.forEach(s => {
         if (s.trust < DIRECTOR_OBJECTIVES.minTrustWithRequired && s.status !== 'critical') {
-            const warningMsg = `Proyecto en Riesgo Crítico: La confianza con ${s.name} (${s.role}) ha colapsado, poniendo en peligro el proyecto.`;
+            const warningMsg = `Proyecto en Riesgo Cr├¡tico: La confianza con ${s.name} (${s.role}) ha colapsado, poniendo en peligro el proyecto.`;
             if (!criticalWarnings.includes(warningMsg)) {
                 newWarnings.push(warningMsg);
                 updatedStakeholders = updatedStakeholders.map(sh => sh.name === s.name ? { ...sh, status: 'critical' } : sh);
@@ -238,19 +268,19 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
     }
     
     // 2. Deadline
-    const deadlineWarning = `Proyecto en Riesgo Crítico: Plazo Excedido. El proyecto ha superado los ${DIRECTOR_OBJECTIVES.maxDeadline} días.`;
+    const deadlineWarning = `Proyecto en Riesgo Cr├¡tico: Plazo Excedido. El proyecto ha superado los ${DIRECTOR_OBJECTIVES.maxDeadline} d├¡as.`;
     if (day > DIRECTOR_OBJECTIVES.maxDeadline && !criticalWarnings.includes(deadlineWarning)) {
         newWarnings.push(deadlineWarning);
     }
 
     // 3. Budget
-    const budgetWarning = `Proyecto en Riesgo Crítico: Presupuesto Agotado. El proyecto es financieramente insolvente.`;
+    const budgetWarning = `Proyecto en Riesgo Cr├¡tico: Presupuesto Agotado. El proyecto es financieramente insolvente.`;
     if (budget < DIRECTOR_OBJECTIVES.minBudget && !criticalWarnings.includes(budgetWarning)) {
         newWarnings.push(budgetWarning);
     }
     
     // 4. Reputation
-    const reputationWarning = `Proyecto en Riesgo Crítico: Reputación Colapsada. Se ha perdido el apoyo interno y del directorio.`;
+    const reputationWarning = `Proyecto en Riesgo Cr├¡tico: Reputaci├│n Colapsada. Se ha perdido el apoyo interno y del directorio.`;
     if (reputation < DIRECTOR_OBJECTIVES.minReputation && !criticalWarnings.includes(reputationWarning)) {
         newWarnings.push(reputationWarning);
     }
@@ -307,12 +337,12 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
      };
 
     if (nextDay > currentState.day) {
-        newEvents.push(`Ha comenzado el día ${nextDay}. Un nuevo día trae nuevos desafíos.`);
+        newEvents.push(`Ha comenzado el d├¡a ${nextDay}. Un nuevo d├¡a trae nuevos desaf├¡os.`);
         
         const updatedStakeholders = newState.stakeholders.map(sh => {
             const updatedCommitments = sh.commitments.map(c => {
                 if (c.status === 'pending' && nextDay > c.dayDue) {
-                    newEvents.push(`¡Promesa a ${sh.name} ('${c.description}') rota! La confianza ha sido dañada.`);
+                    newEvents.push(`┬íPromesa a ${sh.name} ('${c.description}') rota! La confianza ha sido da├▒ada.`);
                     return { ...c, status: 'broken' as const };
                 }
                 return c;
@@ -360,7 +390,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
         };
       });
 
-      const summary = `Resolución día ${completedDay}: presupuesto ${deltaBudget >= 0 ? '+' : ''}${deltaBudget}, reputación ${deltaReputation >= 0 ? '+' : ''}${deltaReputation}`;
+      const summary = `Resoluci├│n d├¡a ${completedDay}: presupuesto ${deltaBudget >= 0 ? '+' : ''}${deltaBudget}, reputaci├│n ${deltaReputation >= 0 ? '+' : ''}${deltaReputation}`;
       return {
         ...prev,
         budget: nextBudget,
@@ -383,7 +413,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
           startedAt: sessionStartRef.current ?? Date.now(),
           endedAt: Date.now(),
         });
-        await fetch(`${API_BASE_URL.replace(/\\/$/, '')}/sessions`, {
+        await fetch(`${API_BASE_URL.replace(/\/$/, '')}/sessions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(exportPayload),
@@ -391,7 +421,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
 
         // 2) Resolve daily effects
         const resp = await fetch(
-          `${API_BASE_URL.replace(/\\/$/, '')}/sessions/${exportPayload.session_metadata.session_id}/resolve_day_effects?day=${completedDay}`,
+          `${API_BASE_URL.replace(/\/$/, '')}/sessions/${exportPayload.session_metadata.session_id}/resolve_day_effects?day=${completedDay}`,
           { method: 'POST' }
         );
         if (!resp.ok) {
@@ -403,6 +433,8 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
         const stakeholderDeltas = data.stakeholder_deltas || {};
 
         setGameState((prev) => applyDailyDeltas(prev, completedDay, globalDeltas, stakeholderDeltas));
+        const summary = summarizeDeltas(completedDay, globalDeltas, stakeholderDeltas, snapshot.stakeholders);
+        setDailySummary(summary);
       } catch (err) {
         console.warn('syncDayWithBackend error', err);
       }
@@ -428,7 +460,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
     setPlayerActions(
       scenario.options.map(opt => {
         const effects = resolveGlobalEffects(opt.consequences);
-        return { label: opt.text, action: opt.option_id, cost: "Decisión", globalEffectsUI: effects.ui };
+        return { label: opt.text, action: opt.option_id, cost: "Decisi├│n", globalEffectsUI: effects.ui };
       })
     );
     startLogging(scenario.node_id);
@@ -509,7 +541,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
                     ...latestState,
                     calendar: latestState.calendar.filter(m => m !== upcomingMeeting)
                 }));
-                returnToSecretary(`CTO, me acaban de informar que ${targetStakeholder.name} ha cancelado la reunión. Su oficina citó circunstancias imprevistas. Parece que su humor es bastante malo.`);
+                returnToSecretary(`CTO, me acaban de informar que ${targetStakeholder.name} ha cancelado la reuni├│n. Su oficina cit├│ circunstancias imprevistas. Parece que su humor es bastante malo.`);
                 return;
             }
             
@@ -539,9 +571,9 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
             setCountdown(PERIOD_DURATION);
         }
     } else {
-        let secretaryMessage = `Hemos pasado al bloque de ${newState.timeSlot} del día ${newState.day}. La agenda está libre. ¿En qué puedo asistirle?`;
+        let secretaryMessage = `Hemos pasado al bloque de ${newState.timeSlot} del d├¡a ${newState.day}. La agenda est├í libre. ┬┐En qu├® puedo asistirle?`;
         if (previousCharacter && previousCharacter.role !== SECRETARY_ROLE) {
-             secretaryMessage = `Su reunión con ${previousCharacter.name} ha concluido. Ahora estamos en el bloque de ${newState.timeSlot} del día ${newState.day}. La agenda está libre. ¿En qué puedo asistirle?`;
+             secretaryMessage = `Su reuni├│n con ${previousCharacter.name} ha concluido. Ahora estamos en el bloque de ${newState.timeSlot} del d├¡a ${newState.day}. La agenda est├í libre. ┬┐En qu├® puedo asistirle?`;
         }
         returnToSecretary(secretaryMessage);
     }
@@ -573,7 +605,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
     if (secretaryChar) {
       setSecretary(secretaryChar);
       setCharacterInFocus(secretaryChar);
-      setPersonalizedDialogue(`Bienvenido, ${gameState.playerName}. El 'Proyecto Quantum Leap' es nuestra máxima prioridad. Estoy aquí para asistirle. ¿Cómo desea proceder?`);
+      setPersonalizedDialogue(`Bienvenido, ${gameState.playerName}. El 'Proyecto Quantum Leap' es nuestra m├íxima prioridad. Estoy aqu├¡ para asistirle. ┬┐C├│mo desea proceder?`);
       setPlayerActions(getInitialSecretaryActions());
       setIsTimerPaused(true);
       
@@ -638,9 +670,9 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
     setSchedulingState('confirming_schedule');
     setCharacterInFocus(secretary);
     setStakeholderToSchedule(stakeholder);
-    setPersonalizedDialogue(`Desea agendar una reunión con ${stakeholder.name} el día ${selectedSlot.day}, en el bloque de ${selectedSlot.slot}. ¿Confirmo la cita?`);
+    setPersonalizedDialogue(`Desea agendar una reuni├│n con ${stakeholder.name} el d├¡a ${selectedSlot.day}, en el bloque de ${selectedSlot.slot}. ┬┐Confirmo la cita?`);
     setPlayerActions([
-        { label: "Sí, confirmar.", cost: "Confirmar", action: "confirm_schedule" },
+        { label: "S├¡, confirmar.", cost: "Confirmar", action: "confirm_schedule" },
         { label: "No, cancelar.", cost: "Cancelar", action: "cancel_schedule" }
     ]);
   };
@@ -648,7 +680,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
   const handleSlotSelect = (day: number, slot: TimeSlotType) => {
     setSelectedSlot({ day, slot });
     setSchedulingState('selecting_stakeholder');
-    setPersonalizedDialogue(`Ha seleccionado el bloque de ${slot}, día ${day}. ¿Con quién desea reunirse?`);
+    setPersonalizedDialogue(`Ha seleccionado el bloque de ${slot}, d├¡a ${day}. ┬┐Con qui├®n desea reunirse?`);
   };
 
   const handlePlayerAction = async (action: PlayerAction) => {
@@ -780,7 +812,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
         switch (action.action) {
             case 'schedule_meeting':
                 setSchedulingState('selecting_slot');
-                setPersonalizedDialogue("Por favor, seleccione un bloque disponible en el calendario para la reunión.");
+                setPersonalizedDialogue("Por favor, seleccione un bloque disponible en el calendario para la reuni├│n.");
                 setPlayerActions([]);
                 setIsLoading(false);
                 return;
@@ -839,14 +871,14 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
 
                         return newState;
                     });
-                    returnToSecretary(`Excelente. He confirmado su reunión con ${stakeholderToSchedule.name} el día ${selectedSlot.day}, durante el bloque de ${selectedSlot.slot}.`);
+                    returnToSecretary(`Excelente. He confirmado su reuni├│n con ${stakeholderToSchedule.name} el d├¡a ${selectedSlot.day}, durante el bloque de ${selectedSlot.slot}.`);
                     setStakeholderToSchedule(null);
                     setSelectedSlot(null);
                 }
                 setIsLoading(false);
                 return;
             case 'cancel_schedule':
-                 returnToSecretary("Muy bien, cancelaré la solicitud. ¿Cómo procedemos?");
+                 returnToSecretary("Muy bien, cancelar├® la solicitud. ┬┐C├│mo procedemos?");
                  setStakeholderToSchedule(null);
                  setSelectedSlot(null);
                  setIsLoading(false);
@@ -881,6 +913,11 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
                 node_id: scenario.node_id,
                 option_id: option.option_id
             });
+            if (Array.isArray(consequences?.expected_actions) && consequences.expected_actions.length > 0) {
+                mechanicEngine.registerExpectedActions(scenario.node_id, option.option_id, consequences.expected_actions);
+                const toastText = characterInFocus?.name ? `${characterInFocus.name} recordará eso` : 'NPC recordará eso';
+                showToast(toastText);
+            }
 
             setGameState(prev => {
                 const newStakeholders = prev.stakeholders.map(sh => {
@@ -919,7 +956,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
                     projectProgress: Math.max(0, Math.min(100, prev.projectProgress + (consequences.projectProgressChange ?? 0))),
                     stakeholders: newStakeholders,
                     completedScenarios: [...prev.completedScenarios, scenario.node_id],
-                    eventsLog: [...prev.eventsLog, `Decisión con ${characterInFocus.name}: ${action.label}`],
+                    eventsLog: [...prev.eventsLog, `Decisi├│n con ${characterInFocus.name}: ${action.label}`],
                     decisionLog: [...prev.decisionLog, decisionLogEntry],
                     processLog: processLog ? [...prev.processLog, processLog] : prev.processLog,
                 };
@@ -929,7 +966,7 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
 
             if (currentMeeting) {
                 if (currentMeeting.nodeIndex >= currentMeeting.sequence.nodes.length - 1) {
-                    setPlayerActions([{ label: "Finalizar Discusión", cost: "Continuar", action: "end_meeting_sequence" }]);
+                    setPlayerActions([{ label: "Finalizar Discusi├│n", cost: "Continuar", action: "end_meeting_sequence" }]);
                 } else {
                     setPlayerActions([{ label: "Continuar...", cost: "Continuar", action: "continue_meeting_sequence" }]);
                 }
@@ -1155,7 +1192,40 @@ export default function InnovatecGame({ onExitToHome }: InnovatecGameProps): Rea
         <main className="flex-grow mt-4">
           {renderMechanicTab()}
         </main>
+        {dailySummary && (
+          <div className="fixed top-24 left-1/2 -translate-x-1/2 max-w-2xl bg-gray-800/95 text-white px-8 py-6 rounded-2xl shadow-lg border border-gray-700">
+            <div className="flex justify-between items-start gap-4">
+              <div>
+                <div className="text-sm uppercase tracking-wide text-gray-300">Resolución día {dailySummary.day}</div>
+                <div className="text-xl font-bold mt-1">{dailySummary.summary}</div>
+                {dailySummary.stakeholderDetails.length > 0 && (
+                  <ul className="mt-2 text-sm text-gray-200 space-y-1">
+                    {dailySummary.stakeholderDetails.map((line, idx) => (
+                      <li key={idx}>• {line}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <button
+                className="text-gray-300 hover:text-white text-sm"
+                onClick={() => setDailySummary(null)}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
+        {toastMessage && (
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 max-w-xl bg-gradient-to-br from-yellow-500/95 via-orange-500/95 to-amber-600/95 text-white px-10 py-7 rounded-3xl shadow-[0_18px_60px_rgba(0,0,0,0.48)] border-2 border-yellow-100/70 text-2xl font-bold tracking-wide animate-fade-in">
+            <div className="flex items-start gap-4">
+              <span className="text-3xl leading-none">⚠️</span>
+              <span className="leading-tight">{toastMessage}</span>
+            </div>
+          </div>
+        )}
       </div>
     </MechanicProvider>
   );
 }
+
+

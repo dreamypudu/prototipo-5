@@ -365,6 +365,220 @@ def _json_dump(value):
     return json.dumps(value, ensure_ascii=False) if value is not None else None
 
 
+def _json_load(value):
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return value
+
+
+# ---- Helpers for comparison rules ----
+import unicodedata
+from typing import Any
+
+def _normalize_text(value) -> str:
+    if value is None:
+        return ""
+    normalized = unicodedata.normalize("NFKD", str(value))
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch)).lower().strip()
+
+
+DAY_INDEX = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6,
+    "lunes": 0, "martes": 1, "miercoles": 2, "miércoles": 2, "jueves": 3, "viernes": 4, "sabado": 5, "sábado": 5, "domingo": 6,
+}
+
+
+def _day_index_from_value(value):
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return (value - 1) % 7 if value > 0 else None
+    text = _normalize_text(value)
+    if text.isdigit():
+        num = int(text)
+        return (num - 1) % 7 if num > 0 else None
+    return DAY_INDEX.get(text)
+
+
+def _parse_time_to_minutes(raw: str):
+    text = _normalize_text(raw)
+    if ":" not in text:
+        if text.isdigit() and len(text) in (3, 4):
+            hours = int(text[:-2]); minutes = int(text[-2:]); return hours * 60 + minutes
+        return None
+    parts = text.split(":", 1)
+    try:
+        return int(parts[0]) * 60 + int(parts[1])
+    except ValueError:
+        return None
+
+
+def _parse_time_window(value):
+    if value is None:
+        return None
+    text = _normalize_text(value)
+    if text in ("am", "morning", "manana", "mañana"):
+        return {"slot": "AM"}
+    if text in ("pm", "tarde", "afternoon", "evening", "noche"):
+        return {"slot": "PM"}
+    if "-" in text:
+        start_raw, end_raw = text.split("-", 1)
+        start_min = _parse_time_to_minutes(start_raw)
+        end_min = _parse_time_to_minutes(end_raw)
+        if start_min is None or end_min is None:
+            return None
+        return {"start": start_min, "end": end_min}
+    return None
+
+
+def _normalize_slot(value):
+    if value is None:
+        return None
+    text = _normalize_text(value)
+    if text in ("am", "morning", "manana", "mañana"):
+        return "AM"
+    if text in ("pm", "tarde", "afternoon", "evening", "noche"):
+        return "PM"
+    return None
+
+
+def _parse_datetime(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def _extract_actual_time_info(actual: dict):
+    vf = _json_load(actual.get("value_final")) or {}
+    ctx = _json_load(actual.get("context")) or {}
+    day_value = vf.get("day") or ctx.get("day")
+    slot_value = vf.get("time_slot") or vf.get("slot") or ctx.get("time_slot")
+    dt_value = vf.get("datetime") or vf.get("scheduled_at") or vf.get("arrived_at")
+    parsed_dt = _parse_datetime(dt_value)
+
+    weekday_index = _day_index_from_value(day_value)
+    if weekday_index is None and parsed_dt:
+        weekday_index = parsed_dt.weekday()
+
+    minute_of_day = parsed_dt.hour * 60 + parsed_dt.minute if parsed_dt else None
+    slot = _normalize_slot(slot_value)
+    if slot is None and parsed_dt:
+        slot = "AM" if parsed_dt.hour < 12 else "PM"
+
+    return {"weekday_index": weekday_index, "slot": slot, "minute_of_day": minute_of_day}
+
+
+# Rule handlers
+def _default_rule(expected: dict, actual: dict):
+    constraints = expected.get("constraints") or {}
+    if not constraints:
+        return {"outcome": "DONE_OK"}
+    vf = _json_load(actual.get("value_final")) or {}
+    ctx = _json_load(actual.get("context")) or {}
+    merged = {**ctx, **vf}
+    missing = {}
+    for k, v in constraints.items():
+        if merged.get(k) != v:
+            missing[k] = v
+    if not missing:
+        return {"outcome": "DONE_OK"}
+    return {"outcome": "DEVIATION", "deviation": {"missing": missing, "actual": merged}}
+
+
+def _rule_time_and_day(expected: dict, actual: dict):
+    constraints = expected.get("constraints") or {}
+    exp_day = _day_index_from_value(constraints.get("day"))
+    exp_window = _parse_time_window(constraints.get("time_window"))
+    info = _extract_actual_time_info(actual)
+    missing = {}
+    if exp_day is not None and info.get("weekday_index") != exp_day:
+        missing["day"] = constraints.get("day")
+    if exp_window:
+        if "slot" in exp_window:
+            if info.get("slot") != exp_window["slot"]:
+                missing["time_window"] = constraints.get("time_window")
+        else:
+            m = info.get("minute_of_day")
+            if m is None or not (exp_window["start"] <= m <= exp_window["end"]):
+                missing["time_window"] = constraints.get("time_window")
+    if not missing:
+        return {"outcome": "DONE_OK"}
+    return {"outcome": "DEVIATION", "deviation": {"missing": missing, "actual": info}}
+
+
+RULE_HANDLERS = {
+    "default_rule": _default_rule,
+    "meeting_time_rule_v1": _rule_time_and_day,
+    "visit_stakeholder_rule_v1": _rule_time_and_day,
+    "research_hours_rule_v1": _rule_time_and_day,
+}
+
+RULE_EFFECTS = {
+    "meeting_time_rule_v1": {
+        "DONE_OK": {"global": {"reputation": 1}},
+        "DEVIATION": {"global": {"reputation": -1}},
+        "NOT_DONE": {"global": {"reputation": -2}},
+    },
+    "visit_stakeholder_rule_v1": {
+        "DONE_OK": {"stakeholder": {"trust": 2}},
+        "DEVIATION": {"stakeholder": {"trust": -1}},
+        "NOT_DONE": {"stakeholder": {"trust": -2}},
+    },
+    "research_hours_rule_v1": {
+        "DONE_OK": {"global": {"reputation": 1}},
+        "DEVIATION": {"global": {"reputation": -1}},
+        "NOT_DONE": {"global": {"reputation": -2}},
+    },
+    "default_rule": {
+        "DONE_OK": {},
+        "DEVIATION": {},
+        "NOT_DONE": {},
+    },
+}
+
+
+def _pick_best_match(expected: dict, matches: list):
+    created_at = expected.get("created_at") or 0
+    after = [m for m in matches if (m.get("committed_at") or 0) >= created_at]
+    after.sort(key=lambda a: a.get("committed_at") or 0)
+    if after:
+        return after[0]
+    return sorted(matches, key=lambda a: a.get("committed_at") or 0)[0]
+
+
+def _extract_stakeholder_id(target_ref: str):
+    if target_ref and target_ref.startswith("stakeholder:"):
+        return target_ref.split(":", 1)[1]
+    return None
+
+
+def _apply_effects(global_deltas: dict, stakeholder_deltas: dict, effect: dict, expected: dict):
+    if not effect:
+        return
+    for k, v in (effect.get("global") or {}).items():
+        global_deltas[k] = global_deltas.get(k, 0) + v
+    stakeholder_effects = effect.get("stakeholder") or {}
+    if stakeholder_effects:
+        sid = _extract_stakeholder_id(expected.get("target_ref"))
+        if sid:
+            curr = stakeholder_deltas.get(sid, {})
+            for k, v in stakeholder_effects.items():
+                curr[k] = curr.get(k, 0) + v
+            stakeholder_deltas[sid] = curr
+
+
 def normalize_session(conn, session_id: str, session: dict, created_at: str):
     metadata = session.get("session_metadata", {})
     version_id = metadata.get("simulator_version_id")
@@ -727,6 +941,175 @@ def normalize_all_sessions():
         conn.commit()
 
     return {"ok": True, "processed": len(results), "results": results}
+
+
+@app.post("/sessions/{session_id}/resolve_day_effects")
+def resolve_day_effects(session_id: str, day: int):
+    if day is None:
+        raise HTTPException(status_code=400, detail="day is required")
+
+    with get_conn() as conn:
+        # ensure session exists
+        exists = conn.execute("SELECT 1 FROM sessions WHERE session_id = %s", (session_id,)).fetchone()
+        if not exists:
+            raise HTTPException(status_code=404, detail="session not found")
+
+        existing_effect = conn.execute(
+            "SELECT comparisons, global_deltas, stakeholder_deltas FROM daily_effects WHERE session_id = %s AND day = %s",
+            (session_id, day),
+        ).fetchone()
+        if existing_effect:
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "day": day,
+                "comparisons": _json_load(existing_effect["comparisons"]) or [],
+                "global_deltas": _json_load(existing_effect["global_deltas"]) or {},
+                "stakeholder_deltas": _json_load(existing_effect["stakeholder_deltas"]) or {},
+                "cached": True,
+            }
+
+        expected_rows = conn.execute(
+            """
+            SELECT expected_action_id, source_node_id, source_option_id, action_type, target_ref,
+                   constraints, rule_id, created_at, mechanic_id
+            FROM expected_actions
+            WHERE session_id = %s
+            """,
+            (session_id,),
+        ).fetchall()
+        canonical_rows = conn.execute(
+            """
+            SELECT canonical_action_id, mechanic_id, action_type, target_ref, value_final, committed_at, context
+            FROM canonical_actions
+            WHERE session_id = %s
+            """,
+            (session_id,),
+        ).fetchall()
+
+        expected_actions = [
+            {
+                "expected_action_id": r["expected_action_id"],
+                "source": {"node_id": r["source_node_id"], "option_id": r["source_option_id"]},
+                "action_type": r["action_type"],
+                "target_ref": r["target_ref"],
+                "constraints": _json_load(r["constraints"]) or {},
+                "rule_id": r["rule_id"] or "default_rule",
+                "created_at": r["created_at"] or 0,
+                "mechanic_id": r["mechanic_id"],
+            }
+            for r in expected_rows
+        ]
+        canonical_actions = [
+            {
+                "canonical_action_id": r["canonical_action_id"],
+                "mechanic_id": r["mechanic_id"],
+                "action_type": r["action_type"],
+                "target_ref": r["target_ref"],
+                "value_final": _json_load(r["value_final"]),
+                "committed_at": r["committed_at"] or 0,
+                "context": _json_load(r["context"]),
+            }
+            for r in canonical_rows
+        ]
+
+        # Filter expected by day constraint if present
+        day_index = _day_index_from_value(day)
+        def applies_to_day(exp: dict):
+            constraints = exp.get("constraints") or {}
+            if "day" not in constraints:
+                return True
+            exp_day = _day_index_from_value(constraints.get("day"))
+            return exp_day is None or exp_day == day_index
+
+        comparisons = []
+        global_deltas = {"budget": 0, "reputation": 0}
+        stakeholder_deltas = {}
+
+        for exp in expected_actions:
+            if not applies_to_day(exp):
+                continue
+            matches = [
+                act for act in canonical_actions
+                if act["action_type"] == exp["action_type"]
+                and act["target_ref"] == exp["target_ref"]
+                and (not exp.get("mechanic_id") or act["mechanic_id"] == exp["mechanic_id"])
+            ]
+            if not matches:
+                comparisons.append({
+                    "expected_action_id": exp["expected_action_id"],
+                    "canonical_action_id": None,
+                    "outcome": "NOT_DONE",
+                    "deviation": {"reason": "missing_action"},
+                    "rule_id": exp["rule_id"],
+                })
+                effect = RULE_EFFECTS.get(exp["rule_id"] or "default_rule", {}).get("NOT_DONE")
+                _apply_effects(global_deltas, stakeholder_deltas, effect, exp)
+                continue
+
+            best = _pick_best_match(exp, matches)
+            handler = RULE_HANDLERS.get(exp["rule_id"] or "default_rule", _default_rule)
+            result = handler(exp, best)
+            outcome = result.get("outcome", "DEVIATION")
+            comparisons.append({
+                "expected_action_id": exp["expected_action_id"],
+                "canonical_action_id": best["canonical_action_id"],
+                "outcome": outcome,
+                "deviation": result.get("deviation"),
+                "rule_id": exp["rule_id"],
+            })
+            effect = RULE_EFFECTS.get(exp["rule_id"] or "default_rule", {}).get(outcome)
+            _apply_effects(global_deltas, stakeholder_deltas, effect, exp)
+
+        created_at = datetime.now(timezone.utc).isoformat()
+        conn.execute("BEGIN")
+        for cmp in comparisons:
+            conn.execute(
+                """
+                INSERT INTO comparisons (session_id, expected_action_id, canonical_action_id, outcome, deviation, rule_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    session_id,
+                    cmp["expected_action_id"],
+                    cmp["canonical_action_id"],
+                    cmp["outcome"],
+                    _json_dump(cmp.get("deviation")),
+                    cmp.get("rule_id"),
+                ),
+            )
+        conn.execute(
+            """
+            INSERT INTO daily_effects (session_id, day, comparisons, global_deltas, stakeholder_deltas, created_at, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (session_id, day) DO UPDATE SET
+                comparisons = EXCLUDED.comparisons,
+                global_deltas = EXCLUDED.global_deltas,
+                stakeholder_deltas = EXCLUDED.stakeholder_deltas,
+                created_at = EXCLUDED.created_at,
+                status = EXCLUDED.status
+            """,
+            (
+                session_id,
+                day,
+                _json_dump(comparisons),
+                _json_dump(global_deltas),
+                _json_dump(stakeholder_deltas),
+                created_at,
+                "applied",
+            ),
+        )
+        conn.commit()
+
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "day": day,
+        "comparisons": comparisons,
+        "global_deltas": global_deltas,
+        "stakeholder_deltas": stakeholder_deltas,
+        "cached": False,
+    }
 
 
 @app.get("/sessions")

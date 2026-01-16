@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ConversationMode, GameState, GlobalEffectsUI, Stakeholder, StakeholderQuestion, PlayerAction, TimeSlotType, Commitment, ScenarioNode, ScenarioOption, MeetingSequence, ProcessLogEntry, DecisionLogEntry, Consequences, InboxEmail, PlayerActionLogEntry, Document, ScheduleAssignment, StaffMember, SimulatorVersion, SimulatorConfig, MechanicConfig, GameStatus, QuestionLogEntry } from './types';
 import { INITIAL_GAME_STATE, TIME_SLOTS, DIRECTOR_OBJECTIVES, SECRETARY_ROLE } from './constants';
@@ -22,6 +22,7 @@ import SplashScreen from './components/SplashScreen';
 import Sidebar from './components/Sidebar';
 import VersionSelector from './components/VersionSelector';
 import InnovatecGame from './games/InnovatecGame';
+import type { DailyEffectSummary } from './types';
 
 type ActiveTab = string;
 type AppStep = 'version_selection' | 'splash' | 'game';
@@ -32,6 +33,32 @@ const API_BASE_URL = (import.meta as any)?.env?.VITE_API_URL || 'http://localhos
 type ResolvedMechanicConfig = MechanicConfig & {
   label: string;
   tab_id: string;
+};
+
+const summarizeDeltas = (
+  day: number,
+  globalDeltas: { budget?: number; reputation?: number },
+  stakeholderDeltas: Record<string, any>,
+  stakeholders: Stakeholder[]
+): DailyEffectSummary => {
+  const parts: string[] = [];
+  const b = Number(globalDeltas?.budget || 0);
+  const r = Number(globalDeltas?.reputation || 0);
+  parts.push(`Presupuesto ${b >= 0 ? '+' : ''}${b}`);
+  parts.push(`Reputación ${r >= 0 ? '+' : ''}${r}`);
+  const stakeParts: string[] = [];
+  Object.entries(stakeholderDeltas || {}).forEach(([id, delta]) => {
+    const sh = stakeholders.find(s => s.id === id);
+    if (!sh) return;
+    const t = Number(delta?.trust || 0);
+    const s = Number(delta?.support || 0);
+    stakeParts.push(`${sh.name}: confianza ${t >= 0 ? '+' : ''}${t}, apoyo ${s >= 0 ? '+' : ''}${s}`);
+  });
+  return {
+    day,
+    summary: parts.join(' | '),
+    stakeholderDetails: stakeParts
+  };
 };
 
 const createInitialGameState = (): GameState => {
@@ -102,6 +129,8 @@ export default function App(): React.ReactElement {
   const [conversationMode, setConversationMode] = useState<ConversationMode>('idle');
   const [questionsOrigin, setQuestionsOrigin] = useState<ConversationMode | null>(null);
   const [questionsBaseDialogue, setQuestionsBaseDialogue] = useState<string>('');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [dailySummary, setDailySummary] = useState<DailyEffectSummary | null>(null);
   const enabledMechanics = resolveMechanics(config);
   // Sync mechanic engine buffers with React state periodically or on significant events
   const syncLogs = useMechanicLogSync(setGameState);
@@ -130,6 +159,11 @@ export default function App(): React.ReactElement {
 
   const handleActionHover = useCallback((effects: GlobalEffectsUI | null) => {
     setHoveredGlobalEffects(effects);
+  }, []);
+
+  const showToast = useCallback((msg: string, durationMs = 5000) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), durationMs);
   }, []);
 
   const hasQuestionsFor = (stakeholder: Stakeholder | null): boolean => {
@@ -311,7 +345,7 @@ export default function App(): React.ReactElement {
     let updatedStakeholders = [...stakeholders];
 
     if (projectProgress >= DIRECTOR_OBJECTIVES.minProgress) {
-      setEndGameMessage(`¡Gestión Exitosa! Has logrado alinear a los tres sectores. El CESFAM opera con un equilibrio razonable entre calidad, normativa y comunidad.`);
+      setEndGameMessage(`┬íGesti├│n Exitosa! Has logrado alinear a los tres sectores. El CESFAM opera con un equilibrio razonable entre calidad, normativa y comunidad.`);
       setGameStatus('won');
       return;
     }
@@ -320,7 +354,7 @@ export default function App(): React.ReactElement {
     let stakeholdersWereUpdated = false;
     requiredStakeholders.forEach(s => {
       if (s.trust < DIRECTOR_OBJECTIVES.minTrustWithRequired && s.status !== 'critical') {
-        const warningMsg = `Crisis de Gobernabilidad: ${s.name} (${s.role}) está boicoteando activamente su gestión.`;
+        const warningMsg = `Crisis de Gobernabilidad: ${s.name} (${s.role}) est├í boicoteando activamente su gesti├│n.`;
         if (!criticalWarnings.includes(warningMsg)) {
           newWarnings.push(warningMsg);
           updatedStakeholders = updatedStakeholders.map(sh => sh.name === s.name ? { ...sh, status: 'critical' } : sh);
@@ -332,8 +366,8 @@ export default function App(): React.ReactElement {
       stateChanges.stakeholders = updatedStakeholders;
     }
 
-    if (day > DIRECTOR_OBJECTIVES.maxDeadline && !criticalWarnings.includes(`Gestión Fallida: Plazo Excedido.`)) {
-      newWarnings.push(`Gestión Fallida: Plazo Excedido.`);
+    if (day > DIRECTOR_OBJECTIVES.maxDeadline && !criticalWarnings.includes(`Gesti├│n Fallida: Plazo Excedido.`)) {
+      newWarnings.push(`Gesti├│n Fallida: Plazo Excedido.`);
     }
 
     if (newWarnings.length > 0) {
@@ -387,7 +421,7 @@ export default function App(): React.ReactElement {
     let newState = { ...currentState, day: nextDay, timeSlot: nextSlot, history: { ...currentState.history, ...historyUpdate } };
 
     if (nextDay > currentState.day) {
-      newEvents.push(`Ha comenzado el día ${nextDay}.`);
+      newEvents.push(`Ha comenzado el d├¡a ${nextDay}.`);
       newState.stakeholders = newState.stakeholders.map(sh => {
         const updatedCommitments = sh.commitments.map(c => (c.status === 'pending' && nextDay > c.dayDue) ? { ...c, status: 'broken' as const } : c);
         const newlyBroken = updatedCommitments.filter(c => c.status === 'broken').length - sh.commitments.filter(c => c.status === 'broken').length;
@@ -421,7 +455,7 @@ export default function App(): React.ReactElement {
         };
       });
 
-      const summary = `Resolución día ${completedDay}: presupuesto ${deltaBudget >= 0 ? '+' : ''}${deltaBudget}, reputación ${deltaReputation >= 0 ? '+' : ''}${deltaReputation}`;
+      const summary = `Resoluci├│n d├¡a ${completedDay}: presupuesto ${deltaBudget >= 0 ? '+' : ''}${deltaBudget}, reputaci├│n ${deltaReputation >= 0 ? '+' : ''}${deltaReputation}`;
       return {
         ...prev,
         budget: nextBudget,
@@ -443,14 +477,14 @@ export default function App(): React.ReactElement {
           startedAt: sessionStartRef.current ?? Date.now(),
           endedAt: Date.now()
         });
-        await fetch(`${API_BASE_URL.replace(/\\/$/, '')}/sessions`, {
+        await fetch(`${API_BASE_URL.replace(/\/$/, '')}/sessions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(exportPayload)
         });
 
         const resp = await fetch(
-          `${API_BASE_URL.replace(/\\/$/, '')}/sessions/${exportPayload.session_metadata.session_id}/resolve_day_effects?day=${completedDay}`,
+          `${API_BASE_URL.replace(/\/$/, '')}/sessions/${exportPayload.session_metadata.session_id}/resolve_day_effects?day=${completedDay}`,
           { method: 'POST' }
         );
         if (!resp.ok) {
@@ -461,11 +495,13 @@ export default function App(): React.ReactElement {
         const globalDeltas = data.global_deltas || {};
         const stakeholderDeltas = data.stakeholder_deltas || {};
         setGameState((prev) => applyDailyDeltas(prev, completedDay, globalDeltas, stakeholderDeltas));
+        const summary = summarizeDeltas(completedDay, globalDeltas, stakeholderDeltas, gameState.stakeholders);
+        setDailySummary(summary);
       } catch (err) {
         console.warn('syncDayWithBackend error', err);
       }
     },
-    [config, applyDailyDeltas]
+    [config, applyDailyDeltas, gameState.stakeholders]
   );
 
   const presentScenario = useCallback((scenario: ScenarioNode) => {
@@ -476,7 +512,7 @@ export default function App(): React.ReactElement {
     setPlayerActions(
       scenario.options.map(opt => {
         const effects = resolveGlobalEffects(opt.consequences);
-        return { label: opt.text, action: opt.option_id, cost: "Decisión", globalEffectsUI: effects.ui };
+        return { label: opt.text, action: opt.option_id, cost: "Decisi├│n", globalEffectsUI: effects.ui };
       })
     );
     startLogging(scenario.node_id);
@@ -642,16 +678,16 @@ export default function App(): React.ReactElement {
   const handleCallStakeholder = (stakeholder: Stakeholder) => {
       setCharacterInFocus(stakeholder);
       setActiveTab('interaction');
-      setPersonalizedDialogue(`(Por teléfono) Aló, ¿Director? Aquí ${stakeholder.name}.`);
-      setPlayerActions([{ label: "Solo quería confirmar...", cost: "Corto", action: "conclude_meeting" }]);
+      setPersonalizedDialogue(`(Por tel├®fono) Al├│, ┬┐Director? Aqu├¡ ${stakeholder.name}.`);
+      setPlayerActions([{ label: "Solo quer├¡a confirmar...", cost: "Corto", action: "conclude_meeting" }]);
   };
 
   const handleExecuteWeek = () => {
       setGameState(prev => {
           const jumpDays = 5;
-          return { ...prev, day: prev.day + jumpDays, eventsLog: [...prev.eventsLog, `Semana Ejecutada. Avanzado al día ${prev.day + jumpDays}.`] };
+          return { ...prev, day: prev.day + jumpDays, eventsLog: [...prev.eventsLog, `Semana Ejecutada. Avanzado al d├¡a ${prev.day + jumpDays}.`] };
       });
-      setWarningPopupMessage("Semana ejecutada con éxito.");
+      setWarningPopupMessage("Semana ejecutada con ├®xito.");
       setActiveTab('interaction');
   };
 
@@ -659,7 +695,7 @@ export default function App(): React.ReactElement {
       setActiveTab('schedule');
       setCurrentMeeting(null);
       setCharacterInFocus(null);
-      setWarningPopupMessage("¡PROPUESTAS DE JEFATURAS CARGADAS!");
+      setWarningPopupMessage("┬íPROPUESTAS DE JEFATURAS CARGADAS!");
   };
 
   const handlePlayerAction = async (action: PlayerAction) => {
@@ -799,6 +835,8 @@ export default function App(): React.ReactElement {
             // PSYCHOMETRIC REGISTRATION
             if (consequences.expected_actions) {
               mechanicEngine.registerExpectedActions(scenario.node_id, option.option_id, consequences.expected_actions);
+              const toastText = characterInFocus?.name ? `${characterInFocus.name} recordará eso` : 'NPC recordará eso';
+              showToast(toastText);
             }
             mechanicEngine.emitEvent('dialogue', 'decision_made', {
               node_id: scenario.node_id,
@@ -831,7 +869,7 @@ export default function App(): React.ReactElement {
                     projectProgress: Math.max(0, Math.min(100, prev.projectProgress + (consequences.projectProgressChange ?? 0))),
                     stakeholders: newStakeholders,
                     completedScenarios: [...prev.completedScenarios, scenario.node_id],
-                    eventsLog: [...prev.eventsLog, `Decisión: ${action.label}`],
+                    eventsLog: [...prev.eventsLog, `Decisi├│n: ${action.label}`],
                     processLog: processLog ? [...prev.processLog, processLog] : prev.processLog,
                     decisionLog: [...prev.decisionLog, decisionEntry]
                 };
@@ -840,7 +878,7 @@ export default function App(): React.ReactElement {
             setPersonalizedDialogue(consequences.dialogueResponse);
             if (currentMeeting) {
                 if (currentMeeting.nodeIndex >= currentMeeting.sequence.nodes.length - 1) {
-                    setPlayerActions([{ label: "Finalizar Discusión", cost: "Continuar", action: "end_meeting_sequence" }]);
+                    setPlayerActions([{ label: "Finalizar Discusi├│n", cost: "Continuar", action: "end_meeting_sequence" }]);
                 } else {
                     setPlayerActions([{ label: "Continuar...", cost: "Continuar", action: "continue_meeting_sequence" }]);
                 }
@@ -1033,7 +1071,39 @@ export default function App(): React.ReactElement {
       <main className="flex-grow mt-4">
         {renderMechanicTab()}
       </main>
+      {dailySummary && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 max-w-2xl bg-gray-800/95 text-white px-8 py-6 rounded-2xl shadow-lg border border-gray-700">
+          <div className="flex justify-between items-start gap-4">
+            <div>
+              <div className="text-sm uppercase tracking-wide text-gray-300">Resolución día {dailySummary.day}</div>
+              <div className="text-xl font-bold mt-1">{dailySummary.summary}</div>
+              {dailySummary.stakeholderDetails.length > 0 && (
+                <ul className="mt-2 text-sm text-gray-200 space-y-1">
+                  {dailySummary.stakeholderDetails.map((line, idx) => (
+                    <li key={idx}>• {line}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <button
+              className="text-gray-300 hover:text-white text-sm"
+              onClick={() => setDailySummary(null)}
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+      {toastMessage && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 max-w-xl bg-gradient-to-br from-yellow-500/95 via-orange-500/95 to-amber-600/95 text-white px-10 py-7 rounded-3xl shadow-[0_18px_60px_rgba(0,0,0,0.48)] border-2 border-yellow-100/70 text-2xl font-bold tracking-wide animate-fade-in">
+          <div className="flex items-start gap-4">
+            <span className="text-3xl leading-none">⚠️</span>
+            <span className="leading-tight">{toastMessage}</span>
+          </div>
+        </div>
+      )}
     </div>
     </MechanicProvider>
   );
 }
+
