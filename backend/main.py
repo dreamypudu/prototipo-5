@@ -237,11 +237,34 @@ def create_schema(conn):
             deviation TEXT,
             rule_id TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
-            FOREIGN KEY (expected_action_id) REFERENCES expected_actions(expected_action_id),
-            FOREIGN KEY (canonical_action_id) REFERENCES canonical_actions(canonical_action_id)
+            FOREIGN KEY (expected_action_id) REFERENCES expected_actions(expected_action_id) ON DELETE CASCADE,
+            FOREIGN KEY (canonical_action_id) REFERENCES canonical_actions(canonical_action_id) ON DELETE CASCADE
         )
         """
     )
+    # Ensure FK on comparisons has ON DELETE CASCADE (idempotent)
+    try:
+        conn.execute("ALTER TABLE comparisons DROP CONSTRAINT IF EXISTS comparisons_expected_action_id_fkey")
+        conn.execute(
+            """
+            ALTER TABLE comparisons
+            ADD CONSTRAINT comparisons_expected_action_id_fkey
+            FOREIGN KEY (expected_action_id) REFERENCES expected_actions(expected_action_id) ON DELETE CASCADE
+            """
+        )
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE comparisons DROP CONSTRAINT IF EXISTS comparisons_canonical_action_id_fkey")
+        conn.execute(
+            """
+            ALTER TABLE comparisons
+            ADD CONSTRAINT comparisons_canonical_action_id_fkey
+            FOREIGN KEY (canonical_action_id) REFERENCES canonical_actions(canonical_action_id) ON DELETE CASCADE
+            """
+        )
+    except Exception:
+        pass
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS daily_effects (
