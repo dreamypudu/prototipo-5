@@ -22,7 +22,11 @@ export const scenarios: ScenarioFile = {
                 action_type: "execute_week",
                 target_ref: "global",
                 constraints: { staff_id: "andres-guzman", activity: "ADMIN", min_hours: 11 },
-                rule_id: "research_hours_rule_v1"
+                rule_id: "research_hours_rule_v1",
+                effects: {
+                  TRUE: { global: { reputation: 3 } },
+                  FALSE: { global: { reputation: -4 } }
+                }
               }
             ]
           }
@@ -44,14 +48,22 @@ export const scenarios: ScenarioFile = {
                 action_type: "execute_week",
                 target_ref: "global",
                 constraints: { staff_id: "andres-guzman", activity: "ADMIN", min_hours: 5 },
-                rule_id: "research_hours_rule_v1"
+                rule_id: "research_hours_rule_v1",
+                effects: {
+                  TRUE: { global: { reputation: 2 } },
+                  FALSE: { global: { reputation: -3 } }
+                }
               },
               {
                 mechanic_id: "scheduler",
                 action_type: "execute_week",
                 target_ref: "global",
                 constraints: { staff_id: "andres-guzman", activity: "TRAINING", min_hours: 2 },
-                rule_id: "training_commitment_rule_v1"
+                rule_id: "training_commitment_rule_v1",
+                effects: {
+                  TRUE: { stakeholder: { trust: 3, support: 2 } },
+                  FALSE: { stakeholder: { trust: -3, support: -2 } }
+                }
               }
             ]
           }
@@ -74,7 +86,11 @@ export const scenarios: ScenarioFile = {
                 action_type: "execute_week",
                 target_ref: "global",
                 constraints: { staff_id: "javier-castro", target_sector_id: "AMARILLO" },
-                rule_id: "cross_sector_help_rule_v1"
+                rule_id: "cross_sector_help_rule_v1",
+                effects: {
+                  TRUE: { stakeholder: { trust: 2, support: 1 } },
+                  FALSE: { stakeholder: { trust: -2, support: -1 } }
+                }
               }
             ]
           }
@@ -145,7 +161,11 @@ export const scenarios: ScenarioFile = {
                 action_type: "execute_week",
                 target_ref: "global",
                 constraints: { room_id: "BOX_1", target_sector_id: "AMARILLO", time_window: "AM" },
-                rule_id: "emergency_room_rule_v1"
+                rule_id: "emergency_room_rule_v1",
+                effects: {
+                  TRUE: { global: { reputation: 4 } },
+                  FALSE: { global: { reputation: -4 } }
+                }
               }
             ]
           }
@@ -196,7 +216,11 @@ export const scenarios: ScenarioFile = {
                       mechanic_id: "map",
                       action_type: "visit_stakeholder",
                       target_ref: "stakeholder:andres-guzman",
-                      rule_id: "visit_priority_rule_v1"
+                      rule_id: "visit_priority_rule_v1",
+                      effects: {
+                        TRUE: { stakeholder: { trust: 2, support: 1 } },
+                        FALSE: { stakeholder: { trust: -2, support: -1 } }
+                      }
                     }
                   ]
                 }
@@ -211,7 +235,11 @@ export const scenarios: ScenarioFile = {
                       mechanic_id: "map",
                       action_type: "visit_stakeholder",
                       target_ref: "stakeholder:daniel-rios",
-                      rule_id: "visit_priority_rule_v1"
+                      rule_id: "visit_priority_rule_v1",
+                      effects: {
+                        TRUE: { stakeholder: { trust: 2, support: 1 } },
+                        FALSE: { stakeholder: { trust: -2, support: -1 } }
+                      }
                     }
                   ]
                 }
@@ -226,7 +254,11 @@ export const scenarios: ScenarioFile = {
                       mechanic_id: "map",
                       action_type: "visit_stakeholder",
                       target_ref: "stakeholder:marcela-soto",
-                      rule_id: "visit_priority_rule_v1"
+                      rule_id: "visit_priority_rule_v1",
+                      effects: {
+                        TRUE: { stakeholder: { trust: 2, support: 1 } },
+                        FALSE: { stakeholder: { trust: -2, support: -1 } }
+                      }
                     }
                   ]
                 }
@@ -313,7 +345,11 @@ export const scenarios: ScenarioFile = {
                       action_type: "execute_week",
                       target_ref: "global",
                       constraints: { total_resolved: 3 },
-                      rule_id: "scheduler_war_rule_v1"
+                      rule_id: "scheduler_war_rule_v1",
+                      effects: {
+                        TRUE: { global: { reputation: 3 } },
+                        FALSE: { global: { reputation: -4 } }
+                      }
                     }
                   ]
                 }

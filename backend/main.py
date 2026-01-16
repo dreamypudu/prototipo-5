@@ -187,8 +187,15 @@ def create_schema(conn):
             rule_id TEXT,
             created_at BIGINT,
             mechanic_id TEXT,
+            effects TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
         )
+        """
+    )
+    conn.execute(
+        """
+        ALTER TABLE expected_actions
+        ADD COLUMN IF NOT EXISTS effects TEXT
         """
     )
     conn.execute(
@@ -491,17 +498,14 @@ def _extract_actual_time_info(actual: dict):
 def _default_rule(expected: dict, actual: dict):
     constraints = expected.get("constraints") or {}
     if not constraints:
-        return {"outcome": "DONE_OK"}
+        return {"outcome": "TRUE"}
     vf = _json_load(actual.get("value_final")) or {}
     ctx = _json_load(actual.get("context")) or {}
     merged = {**ctx, **vf}
-    missing = {}
     for k, v in constraints.items():
         if merged.get(k) != v:
-            missing[k] = v
-    if not missing:
-        return {"outcome": "DONE_OK"}
-    return {"outcome": "DEVIATION", "deviation": {"missing": missing, "actual": merged}}
+            return {"outcome": "FALSE"}
+    return {"outcome": "TRUE"}
 
 
 def _rule_time_and_day(expected: dict, actual: dict):
@@ -509,20 +513,17 @@ def _rule_time_and_day(expected: dict, actual: dict):
     exp_day = _day_index_from_value(constraints.get("day"))
     exp_window = _parse_time_window(constraints.get("time_window"))
     info = _extract_actual_time_info(actual)
-    missing = {}
     if exp_day is not None and info.get("weekday_index") != exp_day:
-        missing["day"] = constraints.get("day")
+        return {"outcome": "FALSE"}
     if exp_window:
         if "slot" in exp_window:
             if info.get("slot") != exp_window["slot"]:
-                missing["time_window"] = constraints.get("time_window")
+                return {"outcome": "FALSE"}
         else:
             m = info.get("minute_of_day")
             if m is None or not (exp_window["start"] <= m <= exp_window["end"]):
-                missing["time_window"] = constraints.get("time_window")
-    if not missing:
-        return {"outcome": "DONE_OK"}
-    return {"outcome": "DEVIATION", "deviation": {"missing": missing, "actual": info}}
+                return {"outcome": "FALSE"}
+    return {"outcome": "TRUE"}
 
 
 RULE_HANDLERS = {
@@ -533,25 +534,22 @@ RULE_HANDLERS = {
 }
 
 RULE_EFFECTS = {
+    # Valores por defecto si el expected no define sus propios efectos.
     "meeting_time_rule_v1": {
-        "DONE_OK": {"global": {"reputation": 1}},
-        "DEVIATION": {"global": {"reputation": -1}},
-        "NOT_DONE": {"global": {"reputation": -2}},
+        "TRUE": {"global": {"reputation": 10}},
+        "FALSE": {"global": {"reputation": -10}},
     },
     "visit_stakeholder_rule_v1": {
-        "DONE_OK": {"stakeholder": {"trust": 2}},
-        "DEVIATION": {"stakeholder": {"trust": -1}},
-        "NOT_DONE": {"stakeholder": {"trust": -2}},
+        "TRUE": {"stakeholder": {"trust": 10}},
+        "FALSE": {"stakeholder": {"trust": -10}},
     },
     "research_hours_rule_v1": {
-        "DONE_OK": {"global": {"reputation": 1}},
-        "DEVIATION": {"global": {"reputation": -1}},
-        "NOT_DONE": {"global": {"reputation": -2}},
+        "TRUE": {"global": {"reputation": 10}},
+        "FALSE": {"global": {"reputation": -10}},
     },
     "default_rule": {
-        "DONE_OK": {},
-        "DEVIATION": {},
-        "NOT_DONE": {},
+        "TRUE": {},
+        "FALSE": {},
     },
 }
 
@@ -678,8 +676,8 @@ def normalize_session(conn, session_id: str, session: dict, created_at: str):
         source = action.get("source", {})
         conn.execute(
             """
-            INSERT INTO expected_actions (expected_action_id, session_id, source_node_id, source_option_id, action_type, target_ref, constraints, rule_id, created_at, mechanic_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO expected_actions (expected_action_id, session_id, source_node_id, source_option_id, action_type, target_ref, constraints, rule_id, created_at, mechanic_id, effects)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (expected_action_id) DO UPDATE SET
                 session_id = EXCLUDED.session_id,
                 source_node_id = EXCLUDED.source_node_id,
@@ -689,7 +687,8 @@ def normalize_session(conn, session_id: str, session: dict, created_at: str):
                 constraints = EXCLUDED.constraints,
                 rule_id = EXCLUDED.rule_id,
                 created_at = EXCLUDED.created_at,
-                mechanic_id = EXCLUDED.mechanic_id
+                mechanic_id = EXCLUDED.mechanic_id,
+                effects = EXCLUDED.effects
             """,
             (
                 action.get("expected_action_id"),
@@ -702,6 +701,7 @@ def normalize_session(conn, session_id: str, session: dict, created_at: str):
                 action.get("rule_id"),
                 action.get("created_at"),
                 action.get("mechanic_id"),
+                _json_dump(action.get("effects")),
             ),
         )
 
@@ -979,7 +979,7 @@ def resolve_day_effects(session_id: str, day: int):
         expected_rows = conn.execute(
             """
             SELECT expected_action_id, source_node_id, source_option_id, action_type, target_ref,
-                   constraints, rule_id, created_at, mechanic_id
+                   constraints, rule_id, created_at, mechanic_id, effects
             FROM expected_actions
             WHERE session_id = %s
             """,
@@ -1004,6 +1004,7 @@ def resolve_day_effects(session_id: str, day: int):
                 "rule_id": r["rule_id"] or "default_rule",
                 "created_at": r["created_at"] or 0,
                 "mechanic_id": r["mechanic_id"],
+                "effects": _json_load(r.get("effects")) or {},
             }
             for r in expected_rows
         ]
@@ -1033,6 +1034,12 @@ def resolve_day_effects(session_id: str, day: int):
         global_deltas = {"budget": 0, "reputation": 0}
         stakeholder_deltas = {}
 
+        def resolve_effect(exp: dict, outcome: str):
+            custom = (exp.get("effects") or {}).get(outcome)
+            if custom is not None:
+                return custom
+            return RULE_EFFECTS.get(exp.get("rule_id") or "default_rule", {}).get(outcome)
+
         for exp in expected_actions:
             if not applies_to_day(exp):
                 continue
@@ -1046,26 +1053,26 @@ def resolve_day_effects(session_id: str, day: int):
                 comparisons.append({
                     "expected_action_id": exp["expected_action_id"],
                     "canonical_action_id": None,
-                    "outcome": "NOT_DONE",
-                    "deviation": {"reason": "missing_action"},
+                    "outcome": "FALSE",
+                    "deviation": None,
                     "rule_id": exp["rule_id"],
                 })
-                effect = RULE_EFFECTS.get(exp["rule_id"] or "default_rule", {}).get("NOT_DONE")
+                effect = resolve_effect(exp, "FALSE")
                 _apply_effects(global_deltas, stakeholder_deltas, effect, exp)
                 continue
 
             best = _pick_best_match(exp, matches)
             handler = RULE_HANDLERS.get(exp["rule_id"] or "default_rule", _default_rule)
             result = handler(exp, best)
-            outcome = result.get("outcome", "DEVIATION")
+            outcome = "TRUE" if result.get("outcome") == "TRUE" else "FALSE"
             comparisons.append({
                 "expected_action_id": exp["expected_action_id"],
                 "canonical_action_id": best["canonical_action_id"],
                 "outcome": outcome,
-                "deviation": result.get("deviation"),
+                "deviation": None,
                 "rule_id": exp["rule_id"],
             })
-            effect = RULE_EFFECTS.get(exp["rule_id"] or "default_rule", {}).get(outcome)
+            effect = resolve_effect(exp, outcome)
             _apply_effects(global_deltas, stakeholder_deltas, effect, exp)
 
         created_at = datetime.now(timezone.utc).isoformat()
