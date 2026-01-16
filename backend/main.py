@@ -35,6 +35,14 @@ def create_schema(conn):
     )
     conn.execute(
         """
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS tipo_usuario TEXT,
+        ADD COLUMN IF NOT EXISTS edad_usuario INTEGER,
+        ADD COLUMN IF NOT EXISTS carrera_usuario TEXT
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS versions (
             version_id TEXT PRIMARY KEY,
             created_at TEXT NOT NULL
@@ -61,6 +69,44 @@ def create_schema(conn):
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS objectives (
+            objetivo_id TEXT PRIMARY KEY,
+            stakeholder_id TEXT NOT NULL,
+            texto_objetivo TEXT,
+            atributo_interno_min JSONB,
+            atributo_global_min JSONB,
+            acciones_requeridas JSONB,
+            FOREIGN KEY (stakeholder_id) REFERENCES stakeholders(stakeholder_id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS questions (
+            pregunta_id TEXT PRIMARY KEY,
+            stakeholder_id TEXT NOT NULL,
+            texto_pregunta TEXT,
+            texto_respuesta TEXT,
+            atributo_global_min JSONB,
+            acciones_requeridas JSONB,
+            FOREIGN KEY (stakeholder_id) REFERENCES stakeholders(stakeholder_id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS question_requirements (
+            requisito_pregunta_id BIGSERIAL PRIMARY KEY,
+            pregunta_id TEXT NOT NULL,
+            trust_min INTEGER,
+            support_min INTEGER,
+            reputation_min INTEGER,
+            FOREIGN KEY (pregunta_id) REFERENCES questions(pregunta_id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS sessions (
             session_id TEXT PRIMARY KEY,
             user_id TEXT,
@@ -69,8 +115,34 @@ def create_schema(conn):
             end_time TEXT,
             created_at TEXT NOT NULL,
             payload TEXT NOT NULL,
+            estado TEXT,
+            navegador TEXT,
             FOREIGN KEY (user_id) REFERENCES users(user_id),
             FOREIGN KEY (version_id) REFERENCES versions(version_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS scenarios (
+            escenario_id TEXT PRIMARY KEY,
+            version_id TEXT,
+            stakeholder_id TEXT,
+            etapa INTEGER,
+            titulo TEXT,
+            FOREIGN KEY (version_id) REFERENCES versions(version_id),
+            FOREIGN KEY (stakeholder_id) REFERENCES stakeholders(stakeholder_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS decision_nodes (
+            nodo_id TEXT PRIMARY KEY,
+            escenario_id TEXT,
+            tipo_decision TEXT,
+            texto TEXT,
+            FOREIGN KEY (escenario_id) REFERENCES scenarios(escenario_id)
         )
         """
     )
@@ -87,6 +159,18 @@ def create_schema(conn):
             time_slot TEXT,
             consequences TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bridge_responses (
+            respuesta_puente_id BIGSERIAL PRIMARY KEY,
+            decision_id BIGINT,
+            respuesta_atributo_alto TEXT,
+            respuesta_atributo_medio TEXT,
+            respuesta_atributo_bajo TEXT,
+            FOREIGN KEY (decision_id) REFERENCES explicit_decisions(decision_id) ON DELETE CASCADE
         )
         """
     )
@@ -144,9 +228,27 @@ def create_schema(conn):
             canonical_action_id TEXT,
             outcome TEXT,
             deviation TEXT,
+            rule_id TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
             FOREIGN KEY (expected_action_id) REFERENCES expected_actions(expected_action_id),
             FOREIGN KEY (canonical_action_id) REFERENCES canonical_actions(canonical_action_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_effects (
+            effect_id BIGSERIAL PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            day INTEGER NOT NULL,
+            comparisons TEXT,
+            global_deltas TEXT,
+            stakeholder_deltas TEXT,
+            created_at TEXT NOT NULL,
+            status TEXT,
+            applied_at TEXT,
+            UNIQUE (session_id, day),
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
         )
         """
     )
@@ -219,6 +321,11 @@ def create_schema(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_process_session ON process_logs(session_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_player_session ON player_actions_log(session_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_session_stakeholders_session ON session_stakeholders(session_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_questions_stakeholder ON questions(stakeholder_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_objectives_stakeholder ON objectives(stakeholder_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_decision_nodes_escenario ON decision_nodes(escenario_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_scenarios_version ON scenarios(version_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_effects_session_day ON daily_effects(session_id, day)")
     conn.commit()
 
 
@@ -322,6 +429,7 @@ def normalize_session(conn, session_id: str, session: dict, created_at: str):
     conn.execute("DELETE FROM canonical_actions WHERE session_id = %s", (session_id,))
     conn.execute("DELETE FROM mechanic_events WHERE session_id = %s", (session_id,))
     conn.execute("DELETE FROM comparisons WHERE session_id = %s", (session_id,))
+    conn.execute("DELETE FROM daily_effects WHERE session_id = %s", (session_id,))
     conn.execute("DELETE FROM process_logs WHERE session_id = %s", (session_id,))
     conn.execute("DELETE FROM player_actions_log WHERE session_id = %s", (session_id,))
     conn.execute("DELETE FROM session_state WHERE session_id = %s", (session_id,))
@@ -427,8 +535,8 @@ def normalize_session(conn, session_id: str, session: dict, created_at: str):
     for comparison in comparisons:
         conn.execute(
             """
-            INSERT INTO comparisons (session_id, expected_action_id, canonical_action_id, outcome, deviation)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO comparisons (session_id, expected_action_id, canonical_action_id, outcome, deviation, rule_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
                 session_id,
@@ -436,6 +544,7 @@ def normalize_session(conn, session_id: str, session: dict, created_at: str):
                 comparison.get("canonical_action_id"),
                 comparison.get("outcome"),
                 _json_dump(comparison.get("deviation")),
+                comparison.get("rule_id"),
             ),
         )
 
@@ -513,6 +622,49 @@ def normalize_session(conn, session_id: str, session: dict, created_at: str):
                     _json_dump(stakeholder),
                 ),
             )
+            # Persist question definitions for this stakeholder
+            questions = stakeholder.get("questions") or []
+            if isinstance(questions, list):
+                for q in questions:
+                    q_id = q.get("question_id")
+                    if not q_id:
+                        continue
+                    conn.execute(
+                        """
+                        INSERT INTO questions (pregunta_id, stakeholder_id, texto_pregunta, texto_respuesta, atributo_global_min, acciones_requeridas)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (pregunta_id) DO UPDATE SET
+                            stakeholder_id = EXCLUDED.stakeholder_id,
+                            texto_pregunta = EXCLUDED.texto_pregunta,
+                            texto_respuesta = EXCLUDED.texto_respuesta,
+                            atributo_global_min = EXCLUDED.atributo_global_min,
+                            acciones_requeridas = EXCLUDED.acciones_requeridas
+                        """,
+                        (
+                            q_id,
+                            stakeholder_id,
+                            q.get("text"),
+                            q.get("answer"),
+                            _json_dump(q.get("requirements")),
+                            _json_dump(q.get("actions_required")),
+                        ),
+                    )
+                    # reset requirements entries for this question to avoid duplicates
+                    conn.execute("DELETE FROM question_requirements WHERE pregunta_id = %s", (q_id,))
+                    req = q.get("requirements") or {}
+                    if req:
+                        conn.execute(
+                            """
+                            INSERT INTO question_requirements (pregunta_id, trust_min, support_min, reputation_min)
+                            VALUES (%s, %s, %s, %s)
+                            """,
+                            (
+                                q_id,
+                                req.get("trust_min"),
+                                req.get("support_min"),
+                                req.get("reputation_min"),
+                            ),
+                        )
 
     return {
         "explicit_decisions": len(explicit_decisions),

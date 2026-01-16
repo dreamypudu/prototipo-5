@@ -27,6 +27,7 @@ type ActiveTab = string;
 type AppStep = 'version_selection' | 'splash' | 'game';
 
 const PERIOD_DURATION = 90;
+const API_BASE_URL = (import.meta as any)?.env?.VITE_API_URL || 'http://localhost:8000';
 
 type ResolvedMechanicConfig = MechanicConfig & {
   label: string;
@@ -373,11 +374,13 @@ export default function App(): React.ReactElement {
     let nextDay = currentState.day;
     let newEvents: string[] = [];
     let historyUpdate = {};
+    let completedDay: number | null = null;
 
     if (nextSlotIndex >= TIME_SLOTS.length) {
       nextSlotIndex = 0;
       nextDay++;
       historyUpdate = { [currentState.day]: currentState.stakeholders };
+      completedDay = currentState.day;
     }
     const nextSlot = TIME_SLOTS[nextSlotIndex];
 
@@ -392,10 +395,78 @@ export default function App(): React.ReactElement {
         return { ...sh, commitments: updatedCommitments, trust: newTrust };
       });
     }
-
+    if (completedDay !== null) {
+      (newState as any).__completedDay = completedDay;
+    }
     newState.eventsLog = [...newState.eventsLog, ...newEvents];
     return newState;
   }, []);
+
+  const applyDailyDeltas = useCallback(
+    (prev: GameState, completedDay: number, globalDeltas: any, stakeholderDeltas: Record<string, any>): GameState => {
+      const deltaBudget = Number(globalDeltas?.budget || 0);
+      const deltaReputation = Number(globalDeltas?.reputation || 0);
+      const nextBudget = prev.budget + deltaBudget;
+      const nextReputation = clampReputation(prev.reputation + deltaReputation);
+
+      const updatedStakeholders = prev.stakeholders.map((sh) => {
+        const deltas = stakeholderDeltas?.[sh.id];
+        if (!deltas) return sh;
+        const trustDelta = Number(deltas.trust || 0);
+        const supportDelta = Number(deltas.support || 0);
+        return {
+          ...sh,
+          trust: Math.max(0, Math.min(100, sh.trust + trustDelta)),
+          support: Math.max(sh.minSupport, Math.min(sh.maxSupport, sh.support + supportDelta)),
+        };
+      });
+
+      const summary = `Resolución día ${completedDay}: presupuesto ${deltaBudget >= 0 ? '+' : ''}${deltaBudget}, reputación ${deltaReputation >= 0 ? '+' : ''}${deltaReputation}`;
+      return {
+        ...prev,
+        budget: nextBudget,
+        reputation: nextReputation,
+        stakeholders: updatedStakeholders,
+        eventsLog: [...prev.eventsLog, summary],
+      };
+    },
+    []
+  );
+
+  const syncDayWithBackend = useCallback(
+    async (completedDay: number, snapshot: GameState) => {
+      try {
+        const exportPayload = buildSessionExport({
+          gameState: snapshot,
+          config,
+          sessionId: sessionIdRef.current,
+          startedAt: sessionStartRef.current ?? Date.now(),
+          endedAt: Date.now()
+        });
+        await fetch(`${API_BASE_URL.replace(/\\/$/, '')}/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(exportPayload)
+        });
+
+        const resp = await fetch(
+          `${API_BASE_URL.replace(/\\/$/, '')}/sessions/${exportPayload.session_metadata.session_id}/resolve_day_effects?day=${completedDay}`,
+          { method: 'POST' }
+        );
+        if (!resp.ok) {
+          console.warn('resolve_day_effects failed', await resp.text());
+          return;
+        }
+        const data = await resp.json();
+        const globalDeltas = data.global_deltas || {};
+        const stakeholderDeltas = data.stakeholder_deltas || {};
+        setGameState((prev) => applyDailyDeltas(prev, completedDay, globalDeltas, stakeholderDeltas));
+      } catch (err) {
+        console.warn('syncDayWithBackend error', err);
+      }
+    },
+    [config, applyDailyDeltas]
+  );
 
   const presentScenario = useCallback((scenario: ScenarioNode) => {
     const activeStakeholder = gameState.stakeholders.find(s => s.role === scenario.stakeholderRole);
@@ -426,6 +497,12 @@ export default function App(): React.ReactElement {
     }
     const newState = advanceTime(stateAfterMeetingEnd);
     setGameState(newState);
+    const completedDay = (newState as any).__completedDay as number | null;
+    if (completedDay !== null && completedDay > 0) {
+      const snapshot = { ...newState };
+      delete (snapshot as any).__completedDay;
+      syncDayWithBackend(completedDay, snapshot);
+    }
     setCharacterInFocus(null);
     setCountdown(PERIOD_DURATION);
     syncLogs();
