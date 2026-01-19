@@ -216,7 +216,7 @@ export const scenarios: ScenarioFile = {
                       mechanic_id: "map",
                       action_type: "visit_stakeholder",
                       target_ref: "stakeholder:andres-guzman",
-                      constraints: { day: "Monday", grace_days: 1 },
+                      constraints: { day: "Monday", grace_days: 2 },
                       rule_id: "visit_priority_rule_v1",
                       effects: {
                         TRUE: { stakeholder: { trust: 2, support: 1 } },
