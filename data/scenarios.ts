@@ -365,7 +365,7 @@ export const scenarios: ScenarioFile = {
         initialDialogue: "Director {playerName}. Soy Sofía Castro, su administrativa de confianza. Lamento no haber podido presentarme antes, la mañana ha sido caótica.",
         nodes: ["INTRO_S1_WELCOME"],
         finalDialogue: "Excelente. Le dejo instalarse. Recuerde revisar el mapa para visitar a los equipos.",
-        triggerMap: { day: 2, slot: 'tarde' }, 
+        triggerMap: { day: 1, slot: 'tarde' }, 
         isInevitable: true
     },
     {
@@ -383,7 +383,7 @@ export const scenarios: ScenarioFile = {
         initialDialogue: "Director, disculpe la interrupción abrupta, pero tenemos una situación crítica en Farmacia.",
         nodes: ["CRISIS_FARM_S1"],
         finalDialogue: "Procederé con su instrucción inmediatamente.",
-        triggerMap: { day: 5, slot: 'tarde' }, 
+        triggerMap: { day: 4, slot: 'tarde' }, 
         isInevitable: true
     },
     {
@@ -392,7 +392,7 @@ export const scenarios: ScenarioFile = {
         initialDialogue: "Director, no mire ahora, pero acaba de entrar una comitiva del Ministerio. Es una auditoría sorpresa.",
         nodes: ["INSPECCION_MIN_S1"],
         finalDialogue: "Bien, actuaré rápido para salvar la evaluación del CESFAM.",
-        triggerMap: { day: 4, slot: 'tarde' }, 
+        triggerMap: { day: 3, slot: 'tarde' }, 
         isInevitable: true
     },
 

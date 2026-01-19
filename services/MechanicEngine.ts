@@ -67,7 +67,8 @@ class MechanicEngine {
       constraints: a.constraints || {},
       rule_id: a.rule_id || 'default_rule',
       created_at: Date.now(),
-      mechanic_id: a.mechanic_id
+      mechanic_id: a.mechanic_id,
+      effects: a.effects || {}
     }));
     this.expectedBuffer.push(...normalized);
     return normalized;

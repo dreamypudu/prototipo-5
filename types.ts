@@ -41,6 +41,7 @@ export interface ExpectedAction {
   rule_id: string;
   created_at: number;
   mechanic_id?: string;
+  effects?: Record<string, any>;
 }
 
 export interface ComparisonResult {
