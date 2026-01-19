@@ -216,6 +216,7 @@ export const scenarios: ScenarioFile = {
                       mechanic_id: "map",
                       action_type: "visit_stakeholder",
                       target_ref: "stakeholder:andres-guzman",
+                      constraints: { day: "Monday", grace_days: 1 },
                       rule_id: "visit_priority_rule_v1",
                       effects: {
                         TRUE: { stakeholder: { trust: 2, support: 1 } },
@@ -235,6 +236,7 @@ export const scenarios: ScenarioFile = {
                       mechanic_id: "map",
                       action_type: "visit_stakeholder",
                       target_ref: "stakeholder:daniel-rios",
+                      constraints: { day: "Monday", grace_days: 1 },
                       rule_id: "visit_priority_rule_v1",
                       effects: {
                         TRUE: { stakeholder: { trust: 2, support: 1 } },
@@ -254,6 +256,7 @@ export const scenarios: ScenarioFile = {
                       mechanic_id: "map",
                       action_type: "visit_stakeholder",
                       target_ref: "stakeholder:marcela-soto",
+                      constraints: { day: "Monday", grace_days: 1 },
                       rule_id: "visit_priority_rule_v1",
                       effects: {
                         TRUE: { stakeholder: { trust: 2, support: 1 } },

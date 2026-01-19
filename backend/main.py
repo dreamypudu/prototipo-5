@@ -570,10 +570,17 @@ def _rule_time_and_day(expected: dict, actual: dict):
     constraints = expected.get("constraints") or {}
     exp_day = _day_index_from_value(constraints.get("day"))
     exp_window = _parse_time_window(constraints.get("time_window"))
+    grace_days = int(constraints.get("grace_days") or 0)
     info = _extract_actual_time_info(actual)
-    if exp_day is not None and info.get("weekday_index") != exp_day:
-        return {"outcome": "FALSE"}
-    if exp_window:
+    actual_day = info.get("weekday_index")
+    if exp_day is not None:
+        if actual_day is None:
+            return {"outcome": "FALSE"}
+        delta = actual_day - exp_day
+        if delta < 0 or delta > grace_days:
+            return {"outcome": "FALSE"}
+    # Only enforce time window if estamos en el día de la expected; si se usa gracia al día siguiente, aceptamos sin ventana de slot
+    if exp_window and exp_day is not None and actual_day == exp_day:
         if "slot" in exp_window:
             if info.get("slot") != exp_window["slot"]:
                 return {"outcome": "FALSE"}
