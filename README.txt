@@ -112,6 +112,13 @@ Expected actions por mecanica (ejemplos):
 - map: action_type visit_stakeholder, target_ref stakeholder:{id}
 - scheduler: action_type execute_week, target_ref global, constraints con rule_id
 
+Flujo de persistencia (sesiones y días)
+---------------------------------------
+- Al iniciar una sesión (POST /sessions con el payload completo) el backend siembra/actualiza todos los expected_actions de la sesión y mantiene las FK visibles. No se borran expected_actions en llamadas posteriores.
+- Las canonical_actions se envían desde el front conforme ocurren (o en el snapshot diario) y se upsertan; las comparisons/daily_effects se calculan en /sessions/{id}/resolve_day_effects usando los expected ya guardados.
+- Si el backend no encuentra expected_actions en DB al resolver un día, devuelve ok:false con reason=missing_expected_actions sin romper FK.
+- Orden de normalización: borrar comparisons/daily_effects/canonical/events/logs y luego upsert expected (sin borrarlos), canonical, logs. Así las referencias quedan íntegras.
+
 
 Backend
 -------
@@ -120,6 +127,13 @@ Carpeta: backend/
   API FastAPI (recibe sesiones y normaliza datos).
 - requirements.txt
   Dependencias del backend.
+
+Flujo actualizado (expected/canonical)
+--------------------------------------
+- Expected_actions se guardan una vez al iniciar la sesión (POST /sessions) y no se borran después.
+- /sessions/{id}/resolve_day_effects puede recibir opcionalmente expected_actions (solo las opciones elegidas) y canonical_actions del día; primero las upserta (expected → canonical) y luego calcula comparisons/daily_effects.
+- Si faltan expected en DB, responde ok:false con reason=missing_expected_actions sin romper FK.
+- Mantén el orden: expected primero, luego canonical, luego comparisons. Los borrados diarios no tocan expected.
 - rebuild_db.py
   Utilidad de mantenimiento/normalizacion.
 

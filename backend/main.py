@@ -705,7 +705,6 @@ def normalize_session(conn, session_id: str, session: dict, created_at: str):
     conn.execute("DELETE FROM daily_effects WHERE session_id = %s", (session_id,))
     conn.execute("DELETE FROM mechanic_events WHERE session_id = %s", (session_id,))
     conn.execute("DELETE FROM canonical_actions WHERE session_id = %s", (session_id,))
-    conn.execute("DELETE FROM expected_actions WHERE session_id = %s", (session_id,))
     conn.execute("DELETE FROM explicit_decisions WHERE session_id = %s", (session_id,))
     conn.execute("DELETE FROM process_logs WHERE session_id = %s", (session_id,))
     conn.execute("DELETE FROM player_actions_log WHERE session_id = %s", (session_id,))
@@ -1014,7 +1013,7 @@ def normalize_all_sessions():
 
 
 @app.post("/sessions/{session_id}/resolve_day_effects")
-def resolve_day_effects(session_id: str, day: int):
+def resolve_day_effects(session_id: str, day: int, payload: dict | None = Body(default=None)):
     if day is None:
         raise HTTPException(status_code=400, detail="day is required")
 
@@ -1039,6 +1038,71 @@ def resolve_day_effects(session_id: str, day: int):
                 "cached": True,
             }
 
+        # Optional upsert for expected/canonical provided in payload of the day (only the ones realmente elegidas)
+        if payload:
+            expected_payload = payload.get("expected_actions") or []
+            canonical_payload = payload.get("canonical_actions") or []
+            # Upsert expected first (no deletes)
+            for action in expected_payload:
+                source = action.get("source", {}) or {}
+                conn.execute(
+                    """
+                    INSERT INTO expected_actions (expected_action_id, session_id, source_node_id, source_option_id, action_type, target_ref, constraints, rule_id, created_at, mechanic_id, effects)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (expected_action_id) DO UPDATE SET
+                        session_id = EXCLUDED.session_id,
+                        source_node_id = EXCLUDED.source_node_id,
+                        source_option_id = EXCLUDED.source_option_id,
+                        action_type = EXCLUDED.action_type,
+                        target_ref = EXCLUDED.target_ref,
+                        constraints = EXCLUDED.constraints,
+                        rule_id = EXCLUDED.rule_id,
+                        created_at = EXCLUDED.created_at,
+                        mechanic_id = EXCLUDED.mechanic_id,
+                        effects = EXCLUDED.effects
+                    """,
+                    (
+                        action.get("expected_action_id"),
+                        session_id,
+                        source.get("node_id"),
+                        source.get("option_id"),
+                        action.get("action_type"),
+                        action.get("target_ref"),
+                        _json_dump(action.get("constraints")),
+                        action.get("rule_id"),
+                        action.get("created_at"),
+                        action.get("mechanic_id"),
+                        _json_dump(action.get("effects")),
+                    ),
+                )
+            # Upsert canonical actions sent for this day
+            for action in canonical_payload:
+                conn.execute(
+                    """
+                    INSERT INTO canonical_actions (canonical_action_id, session_id, mechanic_id, action_type, target_ref, value_final, committed_at, context)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (canonical_action_id) DO UPDATE SET
+                        session_id = EXCLUDED.session_id,
+                        mechanic_id = EXCLUDED.mechanic_id,
+                        action_type = EXCLUDED.action_type,
+                        target_ref = EXCLUDED.target_ref,
+                        value_final = EXCLUDED.value_final,
+                        committed_at = EXCLUDED.committed_at,
+                        context = EXCLUDED.context
+                    """,
+                    (
+                        action.get("canonical_action_id"),
+                        session_id,
+                        action.get("mechanic_id"),
+                        action.get("action_type"),
+                        action.get("target_ref"),
+                        _json_dump(action.get("value_final")),
+                        action.get("committed_at"),
+                        _json_dump(action.get("context")),
+                    ),
+                )
+            conn.commit()
+
         expected_rows = conn.execute(
             """
             SELECT expected_action_id, source_node_id, source_option_id, action_type, target_ref,
@@ -1058,6 +1122,14 @@ def resolve_day_effects(session_id: str, day: int):
         ).fetchall()
 
         expected_ids = {r["expected_action_id"] for r in expected_rows}
+        if len(expected_ids) == 0:
+            return {
+                "ok": False,
+                "reason": "missing_expected_actions",
+                "message": "No expected_actions found in DB for this session. Send session payload before resolving day.",
+                "session_id": session_id,
+                "day": day
+            }
 
         expected_actions = [
             {
@@ -1145,6 +1217,14 @@ def resolve_day_effects(session_id: str, day: int):
             if cmp.get("expected_action_id") and cmp["expected_action_id"] not in expected_ids:
                 cmp["expected_action_id"] = None
         comparisons = [c for c in comparisons if (not c.get("expected_action_id")) or c["expected_action_id"] in expected_ids]
+        if len(comparisons) == 0:
+            return {
+                "ok": False,
+                "reason": "missing_expected_actions",
+                "message": "No valid comparisons to persist because expected_actions are missing.",
+                "session_id": session_id,
+                "day": day
+            }
 
         created_at = datetime.now(timezone.utc).isoformat()
         conn.execute("BEGIN")
