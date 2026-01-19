@@ -1104,6 +1104,7 @@ def resolve_day_effects(session_id: str, day: int):
         for cmp in comparisons:
             if cmp.get("expected_action_id") and cmp["expected_action_id"] not in expected_ids:
                 cmp["expected_action_id"] = None
+        comparisons = [c for c in comparisons if (not c.get("expected_action_id")) or c["expected_action_id"] in expected_ids]
 
         created_at = datetime.now(timezone.utc).isoformat()
         conn.execute("BEGIN")
