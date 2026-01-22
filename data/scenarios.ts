@@ -202,73 +202,105 @@ export const scenarios: ScenarioFile = {
 
     // --- NEW INEVITABLE EVENTS SCENARIOS ---
     {
-        node_id: "INTRO_S1_WELCOME",
-        stakeholderRole: "Asistente Administrativa",
-        dialogue: "¡Bienvenido, Director! Soy Sofía. He ordenado su oficina. Tiene la agenda llena. Los tres jefes de sector quieren hablar con usted cuanto antes. ¿Cuál será su prioridad hoy?",
-        options: [
-            {
-                option_id: "A", text: "Quiero reunirme con el Dr. Guzmán (Azul) para asegurar la calidad técnica primero.",
-                tags: { "focus": "technical" },
-                consequences: { 
-                  trustChange: 5, dialogueResponse: "Entendido. El Dr. Guzmán valora la deferencia. Le avisaré que usted lo visitará.",
-                  expected_actions: [
-                    {
-                      mechanic_id: "map",
-                      action_type: "visit_stakeholder",
-                      target_ref: "stakeholder:andres-guzman",
-                      constraints: { day: "Monday", grace_days: 2 },
-                      rule_id: "visit_priority_rule_v1",
-                      effects: {
-                        TRUE: { stakeholder: { trust: 2, support: 1 } },
-                        FALSE: { stakeholder: { trust: -2, support: -1 } }
-                      }
-                    }
-                  ]
+    node_id: "INTRO_S1_SALUDO",
+    stakeholderRole: "Asistente Administrativa",
+    dialogue: "¡Bienvenido, Director! Soy Sofía Castro, su administrativa. Antes de que corra el reloj, lo guiaré por lo esencial.",
+    options: [{ option_id: "NEXT", text: "Siguiente", tags: {}, consequences: { dialogueResponse: "Le cuento el contexto de esta semana." } }]
+},
+{
+    node_id: "INTRO_S1_CONTEXTO",
+    stakeholderRole: "Asistente Administrativa",
+    dialogue: "Contexto: los tres jefes de sector quieren verlo hoy. La semana es corta y la reputación del CESFAM depende de cómo combine calidad, normativa y comunidad.",
+    options: [{ option_id: "NEXT", text: "Siguiente", tags: {}, consequences: { dialogueResponse: "Sobre los horarios..." } }]
+},
+{
+    node_id: "INTRO_S1_HORARIOS",
+    stakeholderRole: "Asistente Administrativa",
+    dialogue: "Horarios y boxes: tenemos pocos box, bloques ajustados y contratos que cumplir. Dejarlo todo rígido genera conflictos; moverlo sin cuidado, también. Revise la Agenda para resolver choques.",
+    options: [{ option_id: "NEXT", text: "Siguiente", tags: {}, consequences: { dialogueResponse: "Le muestro el mapa." } }]
+},
+{
+    node_id: "INTRO_S1_MAPA",
+    stakeholderRole: "Asistente Administrativa",
+    dialogue: "Mapa: aquí elige a quién visitar y en qué box. Cada visita consume un bloque. Priorice según lo que quiera lograr hoy.",
+    options: [{ option_id: "NEXT", text: "Siguiente", tags: {}, consequences: { dialogueResponse: "También correos..." } }]
+},
+{
+    node_id: "INTRO_S1_CORREOS",
+    stakeholderRole: "Asistente Administrativa",
+    dialogue: "Bandeja de entrada: hay correos urgentes. Algunos requieren respuesta y pueden afectar la confianza si los deja pasar.",
+    options: [{ option_id: "NEXT", text: "Siguiente", tags: {}, consequences: { dialogueResponse: "Y los documentos..." } }]
+},
+{
+    node_id: "INTRO_S1_DOCUMENTOS",
+    stakeholderRole: "Asistente Administrativa",
+    dialogue: "Documentos: revise los antecedentes para entender a cada equipo y tomar mejores decisiones.",
+    options: [{ option_id: "NEXT", text: "Siguiente", tags: {}, consequences: { dialogueResponse: "Todo está en la pantalla del PC." } }]
+},
+{
+    node_id: "INTRO_S1_PC",
+    stakeholderRole: "Asistente Administrativa",
+    dialogue: "Todo lo opera desde la pantalla del PC: mapa, agenda, correos y documentos. Lo que diga y haga impacta en reputación y en confianza.",
+    options: [{ option_id: "NEXT", text: "Siguiente", tags: {}, consequences: { dialogueResponse: "¿A quién verá primero?" } }]
+},
+{
+    node_id: "INTRO_S1_ELECCION",
+    stakeholderRole: "Asistente Administrativa",
+    dialogue: "Buena suerte. ¿A quién visitará primero? El reloj sigue pausado; arrancará al terminar esta decisión (lunes AM).",
+    options: [
+        {
+            option_id: "A", text: "Reunirme con el Dr. Guzmán (Azul) para asegurar la calidad técnica primero.",
+            tags: { "focus": "technical" },
+            consequences: { 
+              trustChange: 5, dialogueResponse: "Entendido. El Dr. Guzmán valora la deferencia. Le avisaré que usted lo visitará.",
+              expected_actions: [
+                {
+                  mechanic_id: "map",
+                  action_type: "visit_stakeholder",
+                  target_ref: "stakeholder:andres-guzman",
+                  constraints: { day: "Monday", grace_days: 2 },
+                  rule_id: "visit_priority_rule_v1",
+                  effects: { TRUE: { stakeholder: { trust: 2, support: 1 } }, FALSE: { stakeholder: { trust: -2, support: -1 } } }
                 }
-            },
-            {
-                option_id: "B", text: "La comunidad es lo primero. Quiero ver qué necesita el Sector Amarillo.",
-                tags: { "focus": "social" },
-                consequences: { 
-                  trustChange: 5, dialogueResponse: "Bien. El Sr. Ríos estará encantado, aunque le advierto que es... intenso.",
-                  expected_actions: [
-                    {
-                      mechanic_id: "map",
-                      action_type: "visit_stakeholder",
-                      target_ref: "stakeholder:daniel-rios",
-                      constraints: { day: "Monday", grace_days: 1 },
-                      rule_id: "visit_priority_rule_v1",
-                      effects: {
-                        TRUE: { stakeholder: { trust: 2, support: 1 } },
-                        FALSE: { stakeholder: { trust: -2, support: -1 } }
-                      }
-                    }
-                  ]
-                }
-            },
-            {
-                option_id: "C", text: "Necesito entender las normas internas. Hablaré con la Enf. Soto (Rojo).",
-                tags: { "focus": "normative" },
-                consequences: { 
-                  trustChange: 5, dialogueResponse: "Prudente decisión. La Enf. Soto aprecia el orden. Le avisaré.",
-                  expected_actions: [
-                    {
-                      mechanic_id: "map",
-                      action_type: "visit_stakeholder",
-                      target_ref: "stakeholder:marcela-soto",
-                      constraints: { day: "Monday", grace_days: 1 },
-                      rule_id: "visit_priority_rule_v1",
-                      effects: {
-                        TRUE: { stakeholder: { trust: 2, support: 1 } },
-                        FALSE: { stakeholder: { trust: -2, support: -1 } }
-                      }
-                    }
-                  ]
-                }
+              ]
             }
-        ]
-    },
-
+        },
+        {
+            option_id: "B", text: "La comunidad es lo primero. Quiero ver qué necesita el Sector Amarillo.",
+            tags: { "focus": "social" },
+            consequences: { 
+              trustChange: 5, dialogueResponse: "Bien. El Sr. Ríos estará encantado, aunque le advierto que es... intenso.",
+              expected_actions: [
+                {
+                  mechanic_id: "map",
+                  action_type: "visit_stakeholder",
+                  target_ref: "stakeholder:daniel-rios",
+                  constraints: { day: "Monday", grace_days: 2 },
+                  rule_id: "visit_priority_rule_v1",
+                  effects: { TRUE: { stakeholder: { trust: 2, support: 1 } }, FALSE: { stakeholder: { trust: -2, support: -1 } } }
+                }
+              ]
+            }
+        },
+        {
+            option_id: "C", text: "Necesito entender las normas internas. Hablaré con la Enf. Soto (Rojo).",
+            tags: { "focus": "normative" },
+            consequences: { 
+              trustChange: 5, dialogueResponse: "Prudente decisión. La Enf. Soto aprecia el orden. Le avisaré.",
+              expected_actions: [
+                {
+                  mechanic_id: "map",
+                  action_type: "visit_stakeholder",
+                  target_ref: "stakeholder:marcela-soto",
+                  constraints: { day: "Monday", grace_days: 2 },
+                  rule_id: "visit_priority_rule_v1",
+                  effects: { TRUE: { stakeholder: { trust: 2, support: 1 } }, FALSE: { stakeholder: { trust: -2, support: -1 } } }
+                }
+              ]
+            }
+        }
+    ]
+},
     // 2. CRISIS FARMACIA
     {
         node_id: "CRISIS_FARM_S1",
@@ -366,7 +398,7 @@ export const scenarios: ScenarioFile = {
         sequence_id: "OFFICE_INTRO_SEQ",
         stakeholderRole: "Asistente Administrativa",
         initialDialogue: "Director {playerName}. Soy Sofía Castro, su administrativa de confianza. Lamento no haber podido presentarme antes, la mañana ha sido caótica.",
-        nodes: ["INTRO_S1_WELCOME"],
+        nodes: ["INTRO_S1_SALUDO","INTRO_S1_CONTEXTO","INTRO_S1_HORARIOS","INTRO_S1_MAPA","INTRO_S1_CORREOS","INTRO_S1_DOCUMENTOS","INTRO_S1_PC","INTRO_S1_ELECCION"],
         finalDialogue: "Excelente. Le dejo instalarse. Recuerde revisar el mapa para visitar a los equipos.",
         triggerMap: { day: 1, slot: 'tarde' }, 
         isInevitable: true
